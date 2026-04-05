@@ -1,11 +1,9 @@
 #ifndef CONSTRUCTOR_H
 #define CONSTRUCTOR_H
 
-
 #include <QMainWindow>
 #include <QSettings>
-
-class QLineEdit;
+#include <QLineEdit>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class Constructor; }
@@ -20,25 +18,32 @@ public:
     ~Constructor();
 
 private slots:
-    void selectTOFolder();           // Слот для выбора папки ТО
-    void selectDrawingsFolder();      // Слот для выбора папки Чертежи
-    void selectAdvertisingFolder();      // Слот для выбора папки Цех рекламы
-    void selectGlassFolder();      // Слот для выбора папки Цех стекла
-    void selectDatabaseFolder();      // Слот для выбора папки База данных
-    void exitApplication();           // Слот для выхода из приложения
+    void selectTOFolder();
+    void selectDrawingsFolder();
+    void selectAdvertisingFolder();
+    void selectGlassFolder();
+    void selectDatabaseFolder();
+    void exitApplication();
+    void openOrderFolder();
 
 private:
+    void loadSettings();
+    void saveSettings();
+    bool validateOrderInput(const QString& orderNumber);
+
     Ui::Constructor *ui;
-    QLineEdit *order_line_edit, *product_line_edit;
     QSettings m_settings;
 
-        QString m_toFolder;
-        QString m_drawingsFolder;
-        QString m_advertisingFolder;
-        QString m_glassFolder;
-        QString m_databaseFolder;
+    // Пути к папкам
+    QString m_toFolder;
+    QString m_drawingsFolder;
+    QString m_advertisingFolder;
+    QString m_glassFolder;
+    QString m_databaseFolder;
 
-        void loadSettings();
-        void saveSettings();
+    // Указатели на виджеты
+    QLineEdit *m_orderLineEdit;
+    QLineEdit *m_productLineEdit;
 };
+
 #endif // CONSTRUCTOR_H
