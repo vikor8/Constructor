@@ -65,24 +65,22 @@ Constructor::Constructor(QWidget *parent)
 
     // Добавляем кнопку заказ
     QAction *actionOrder = tbar->addAction("Заказ");
-    QAction *actionTZ = tbar->addAction("ТЗ");
+//    QAction *actionTZ = tbar->addAction("ТЗ");
     QAction *actionDraw = tbar->addAction("Чертежи");
     QAction *actionSketch = tbar->addAction("Эскизы");
     QAction *actionCompare = tbar->addAction("Сравнить с ТО");
 
     // Подключаем кнопку "Заказ"
     connect(actionOrder, &QAction::triggered, this, &Constructor::openOrderFolder);
+    connect(actionDraw, &QAction::triggered, this, &Constructor::openDrawingsFolder);
+    connect(actionSketch, &QAction::triggered, this, &Constructor::openSketchesFolder);
 
-    // Для остальных кнопок пока заглушки (можно добавить позже)
-    connect(actionTZ, &QAction::triggered, [this]() {
-        QMessageBox::information(this, "Информация", "Функция в разработке");
-    });
-    connect(actionDraw, &QAction::triggered, [this]() {
-        QMessageBox::information(this, "Информация", "Функция в разработке");
-    });
-    connect(actionSketch, &QAction::triggered, [this]() {
-        QMessageBox::information(this, "Информация", "Функция в разработке");
-    });
+//     Для остальных кнопок пока заглушки (можно добавить позже)
+
+//    connect(actionTZ, &QAction::triggered, [this]() {
+//        QMessageBox::information(this, "Информация", "Функция в разработке");
+//    });
+
     connect(actionCompare, &QAction::triggered, [this]() {
         QMessageBox::information(this, "Информация", "Функция в разработке");
     });
@@ -340,6 +338,201 @@ void Constructor::openOrderFolder()
         QMessageBox::critical(this, "Ошибка",
                             QString("Не удалось открыть папку:\n%1")
                             .arg(finalPath));
+    }
+}
+
+// Открытие папки чертежей для заказа
+void Constructor::openDrawingsFolder()
+{
+    // Получаем номер заказа из поля ввода
+    QString orderNumber = m_orderLineEdit->text().trimmed();
+
+    // Валидация ввода
+    if (orderNumber.isEmpty()) {
+        QMessageBox::warning(this, "Ошибка", "Пожалуйста, введите номер заказа!");
+        return;
+    }
+
+    // Проверяем, выбрана ли папка Чертежи
+    if (m_drawingsFolder.isEmpty()) {
+        QMessageBox::warning(this, "Ошибка", "Пожалуйста, выберите папку Чертежи в меню 'Файл'!");
+        return;
+    }
+
+    // Проверяем существует ли директория Чертежи
+    QDir drawingsDir(m_drawingsFolder);
+    if (!drawingsDir.exists()) {
+        QMessageBox::critical(this, "Ошибка",
+                            QString("Папка Чертежи не существует:\n%1\n\nПожалуйста, выберите правильную папку в меню 'Файл'.")
+                            .arg(m_drawingsFolder));
+        return;
+    }
+
+    // Получаем список всех папок
+    QStringList allFolders = drawingsDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+
+    // Ищем папки, которые начинаются с номера заказа
+    QStringList foundFolders;
+
+    for (const QString& folderName : allFolders) {
+        // Проверяем, начинается ли папка с номера заказа
+        if (folderName.startsWith(orderNumber)) {
+            foundFolders.append(folderName);
+        }
+    }
+
+    if (foundFolders.isEmpty()) {
+        QMessageBox::information(this, "Не найдено",
+                               QString("Папка с чертежами для заказа №%1 не найдена в:\n%2\n\n"
+                                       "Папка должна начинаться с номера заказа '%3'")
+                               .arg(orderNumber)
+                               .arg(m_drawingsFolder)
+                               .arg(orderNumber));
+        return;
+    }
+
+    // Если найдено несколько папок, показываем выбор
+    QString selectedFolder;
+    if (foundFolders.size() > 1) {
+        bool ok;
+        QString folderName = QInputDialog::getItem(this,
+                                                   "Выбор папки чертежей",
+                                                   "Найдено несколько папок. Выберите нужную:",
+                                                   foundFolders,
+                                                   0,
+                                                   false,
+                                                   &ok);
+        if (ok && !folderName.isEmpty()) {
+            selectedFolder = folderName;
+        } else {
+            return;
+        }
+    } else {
+        selectedFolder = foundFolders.first();
+    }
+
+    // Формируем полный путь к папке чертежей
+    QString drawingsFolderPath = drawingsDir.filePath(selectedFolder);
+
+    // Открываем папку в проводнике (без сообщения об успехе)
+    bool opened = QDesktopServices::openUrl(QUrl::fromLocalFile(drawingsFolderPath));
+
+    if (!opened) {
+        QMessageBox::critical(this, "Ошибка",
+                            QString("Не удалось открыть папку:\n%1")
+                            .arg(drawingsFolderPath));
+    }
+}
+
+// Открытие папки эскизов для заказа
+void Constructor::openSketchesFolder()
+{
+    // Получаем номер заказа из поля ввода
+    QString orderNumber = m_orderLineEdit->text().trimmed();
+
+    // Валидация ввода
+    if (!validateOrderInput(orderNumber)) {
+        return;
+    }
+
+    // Проверяем существует ли директория ТО
+    QDir toDir(m_toFolder);
+    if (!toDir.exists()) {
+        QMessageBox::critical(this, "Ошибка",
+                            QString("Папка ТО не существует:\n%1\n\nПожалуйста, выберите правильную папку в меню 'Файл'.")
+                            .arg(m_toFolder));
+        return;
+    }
+
+    // Формируем шаблоны для поиска папки заказа
+    QString searchPattern1 = "№ " + orderNumber;
+    QString searchPattern2 = "№" + orderNumber;
+    QString searchPattern3 = orderNumber;
+
+    // Получаем список всех папок
+    QStringList allFolders = toDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+
+    // Ищем папку заказа
+    QStringList foundOrderFolders;
+
+    for (const QString& folderName : allFolders) {
+        if (folderName == searchPattern1 || folderName == searchPattern2) {
+            foundOrderFolders.append(folderName);
+        }
+        else if (folderName.startsWith("№ ") && folderName.contains(orderNumber)) {
+            foundOrderFolders.append(folderName);
+        }
+        else if (folderName.startsWith("№") && folderName.contains(orderNumber)) {
+            foundOrderFolders.append(folderName);
+        }
+        else if (folderName.startsWith(orderNumber)) {
+            foundOrderFolders.append(folderName);
+        }
+    }
+
+    if (foundOrderFolders.isEmpty()) {
+        for (const QString& folderName : allFolders) {
+            if (folderName.contains("№") && folderName.contains(orderNumber)) {
+                foundOrderFolders.append(folderName);
+            }
+        }
+    }
+
+    if (foundOrderFolders.isEmpty()) {
+        QMessageBox::information(this, "Не найдено",
+                               QString("Папка с заказом №%1 не найдена в:\n%2")
+                               .arg(orderNumber)
+                               .arg(m_toFolder));
+        return;
+    }
+
+    // Выбираем папку заказа
+    QString selectedOrderFolder;
+    if (foundOrderFolders.size() > 1) {
+        bool ok;
+        QString folderName = QInputDialog::getItem(this,
+                                                   "Выбор папки заказа",
+                                                   "Найдено несколько папок. Выберите нужную:",
+                                                   foundOrderFolders,
+                                                   0,
+                                                   false,
+                                                   &ok);
+        if (ok && !folderName.isEmpty()) {
+            selectedOrderFolder = folderName;
+        } else {
+            return;
+        }
+    } else {
+        selectedOrderFolder = foundOrderFolders.first();
+    }
+
+    // Формируем полный путь к папке заказа
+    QString orderFolderPath = toDir.filePath(selectedOrderFolder);
+
+    // Ищем подпапку "Эскизы" или "Sketch"
+    QDir orderDir(orderFolderPath);
+    QStringList sketchesFolders = orderDir.entryList(QStringList() << "Эскизы" << "Эскиз*" << "Sketch" << "Sketches",
+                                                      QDir::Dirs | QDir::NoDotAndDotDot);
+
+    if (sketchesFolders.isEmpty()) {
+        QMessageBox::warning(this, "Предупреждение",
+                           QString("В папке заказа не найдена папка 'Эскизы'.\nОткрываю корневую папку заказа:\n%1")
+                           .arg(orderFolderPath));
+        QDesktopServices::openUrl(QUrl::fromLocalFile(orderFolderPath));
+        return;
+    }
+
+    // Берем первую найденную папку Эскизы (обычно она одна)
+    QString sketchesFolderName = sketchesFolders.first();
+    QString sketchesFolderPath = orderDir.filePath(sketchesFolderName);
+
+    // Открываем папку Эскизы в проводнике (без сообщения об успехе)
+    bool opened = QDesktopServices::openUrl(QUrl::fromLocalFile(sketchesFolderPath));
+
+    if (!opened) {
+        QMessageBox::critical(this, "Ошибка",
+                            QString("Не удалось открыть папку:\n%1")
+                            .arg(sketchesFolderPath));
     }
 }
 

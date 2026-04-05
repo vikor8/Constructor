@@ -25,6 +25,8 @@ private slots:
     void selectDatabaseFolder();
     void exitApplication();
     void openOrderFolder();
+    void openDrawingsFolder();
+    void openSketchesFolder();
 
 private:
     void loadSettings();
