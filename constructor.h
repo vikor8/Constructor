@@ -27,6 +27,8 @@ private slots:
     void openOrderFolder();
     void openDrawingsFolder();
     void openSketchesFolder();
+    void openDrawingsInTOFolder();
+    void copyToTOFolder();
 
 private:
     void loadSettings();
