@@ -4,6 +4,8 @@
 #include <QMainWindow>
 #include <QSettings>
 #include <QLineEdit>
+#include <QFileSystemModel>
+#include <QTreeView>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class Constructor; }
@@ -30,13 +32,26 @@ private slots:
     void openDrawingsInTOFolder();
     void copyToTOFolder();
 
+    // Слот для обработки двойного клика в дереве файлов
+    void onFolderViewDoubleClicked(const QModelIndex &index);
+
+    // Слот для обработки клика с клавишами-модификаторами
+    void onFolderViewClicked(const QModelIndex &index);
+
 private:
     void loadSettings();
     void saveSettings();
     bool validateOrderInput(const QString& orderNumber);
+    void setupFileSystemModel();
+    QString findOrderFolder(const QString &orderNumber, const QString &basePath);
+    void openFolderInView(const QString &path);
+    void openInExplorer(const QString &path);
 
     Ui::Constructor *ui;
     QSettings m_settings;
+
+    // Модель файловой системы
+    QFileSystemModel *m_fileSystemModel;
 
     // Пути к папкам
     QString m_toFolder;

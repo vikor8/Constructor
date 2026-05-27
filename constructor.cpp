@@ -15,25 +15,40 @@
 #include <QDebug>
 #include <QRegularExpression>
 #include <QDateTime>
-#include <QInputDialog>
-#include <QProgressDialog>
-#include <QThread>
 #include <QFileInfo>
-#include <QDirIterator>
-#include <QRegularExpression>
+#include <QHeaderView>
+#include <QLabel>
+#include <QApplication>
+#include <QProcess>
+#include <QVBoxLayout>
 
 Constructor::Constructor(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::Constructor)
     , m_settings("Best-studio", "ConstructorApp")
+    , m_fileSystemModel(nullptr)
     , m_orderLineEdit(nullptr)
     , m_productLineEdit(nullptr)
 {
     ui->setupUi(this);
+
+    // Устанавливаем layout для центрального виджета
+    QVBoxLayout *layout = new QVBoxLayout(ui->centralwidget);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(ui->m_toFolderView);
+
+    // Настраиваем модель файловой системы
+    setupFileSystemModel();
+
     // Загружаем сохраненные настройки
     loadSettings();
 
-    //Создаем менюбар
+    // Устанавливаем начальную папку, если она есть
+    if (!m_toFolder.isEmpty()) {
+        openFolderInView(m_toFolder);
+    }
+
+    // Создаем менюбар
     QMenuBar *menuBar = new QMenuBar(this);
 
     // Создаем меню "Файл"
@@ -58,7 +73,7 @@ Constructor::Constructor(QWidget *parent)
     setMenuBar(menuBar);
 
     // Создаем первый тулбар
-    QToolBar *tbar = new QToolBar("ToolBar", this);
+    QToolBar *tbar = new QToolBar("Панель заказов", this);
     tbar->setAllowedAreas(Qt::LeftToolBarArea);
     tbar->setOrientation(Qt::Vertical);
     addToolBar(Qt::LeftToolBarArea, tbar);
@@ -69,31 +84,25 @@ Constructor::Constructor(QWidget *parent)
     m_orderLineEdit->setMaximumWidth(70);
     tbar->addWidget(m_orderLineEdit);
 
-    // Добавляем кнопку заказ
+    // Добавляем кнопки
     QAction *actionOrder = tbar->addAction("Заказ");
     QAction *actionSketch = tbar->addAction("Эскизы");
     QAction *actionDrawTO = tbar->addAction("Чертежи в ТО");
     QAction *actionDraw = tbar->addAction("Чертежи");
     QAction *actionCompare = tbar->addAction("Сравнить с ТО");
 
-    // Подключаем кнопку "Заказ"
+    // Подключаем кнопки
     connect(actionOrder, &QAction::triggered, this, &Constructor::openOrderFolder);
     connect(actionSketch, &QAction::triggered, this, &Constructor::openSketchesFolder);
     connect(actionDrawTO, &QAction::triggered, this, &Constructor::openDrawingsInTOFolder);
     connect(actionDraw, &QAction::triggered, this, &Constructor::openDrawingsFolder);
-
-    //     Для остальных кнопок пока заглушки (можно добавить позже)
-
-    //    connect(actionTZ, &QAction::triggered, [this]() {
-    //        QMessageBox::information(this, "Информация", "Функция в разработке");
-    //    });
 
     connect(actionCompare, &QAction::triggered, [this]() {
         QMessageBox::information(this, "Информация", "Функция в разработке");
     });
 
     // Создаем второй тулбар
-    QToolBar *tbar2 = new QToolBar("ToolBar2", this);
+    QToolBar *tbar2 = new QToolBar("Панель изделий", this);
     tbar2->setAllowedAreas(Qt::LeftToolBarArea);
     tbar2->setOrientation(Qt::Vertical);
     addToolBar(Qt::LeftToolBarArea, tbar2);
@@ -104,12 +113,12 @@ Constructor::Constructor(QWidget *parent)
     m_productLineEdit->setMaximumWidth(70);
     tbar2->addWidget(m_productLineEdit);
 
-    // Добавляем кнопку изделие
+    // Добавляем кнопки
     QAction *actionProduction = tbar2->addAction("Изделие");
     QAction *actionTO = tbar2->addAction("ТО");
     QAction *actionTOMove = tbar2->addAction("->ТО");
 
-    // Подключаем кнопки второго тулбара (заглушки)
+    // Подключаем кнопки второго тулбара
     connect(actionProduction, &QAction::triggered, [this]() {
         QMessageBox::information(this, "Информация", "Функция в разработке");
     });
@@ -117,12 +126,194 @@ Constructor::Constructor(QWidget *parent)
         QMessageBox::information(this, "Информация", "Функция в разработке");
     });
     connect(actionTOMove, &QAction::triggered, this, &Constructor::copyToTOFolder);
+
+    // Устанавливаем заголовок окна
+    setWindowTitle("Constructor - Управление заказами");
+
+    // Добавляем подсказку в статусбар
+    statusBar()->showMessage("Ctrl+Клик - открыть в проводнике | Двойной клик - открыть файл | Можно растягивать колонки");
 }
 
 Constructor::~Constructor()
 {
     saveSettings();
     delete ui;
+}
+
+// Настройка модели файловой системы
+void Constructor::setupFileSystemModel()
+{
+    m_fileSystemModel = new QFileSystemModel(this);
+    m_fileSystemModel->setRootPath(QDir::rootPath());
+    m_fileSystemModel->setFilter(QDir::AllEntries | QDir::NoDotAndDotDot);
+
+    // Настраиваем QTreeView из UI
+    ui->m_toFolderView->setModel(m_fileSystemModel);
+    ui->m_toFolderView->setSortingEnabled(true);
+    ui->m_toFolderView->setAnimated(true);
+    ui->m_toFolderView->setIndentation(20);
+    ui->m_toFolderView->setRootIndex(m_fileSystemModel->index(QDir::homePath()));
+
+    // Скрываем заголовок
+    ui->m_toFolderView->setHeaderHidden(true);
+
+    // НАСТРОЙКА КОЛОНОК ДЛЯ РЕГУЛИРОВКИ РАЗМЕРА
+    // Разрешаем растягивать последнюю секцию
+    ui->m_toFolderView->header()->setStretchLastSection(true);
+
+    // Устанавливаем режим изменения размера - можно растягивать
+    ui->m_toFolderView->header()->setSectionResizeMode(QHeaderView::Interactive);
+
+    // Устанавливаем минимальную ширину для колонки с именем
+    ui->m_toFolderView->header()->setMinimumSectionSize(200);
+
+    // Начальная ширина колонки с именем
+    ui->m_toFolderView->setColumnWidth(0, 300);
+
+    // Разрешаем пользователю менять ширину колонок
+    ui->m_toFolderView->header()->setSectionsMovable(false);
+    ui->m_toFolderView->header()->setSectionsClickable(true);
+
+    // Подключаем обработчики кликов
+    connect(ui->m_toFolderView, &QTreeView::doubleClicked,
+            this, &Constructor::onFolderViewDoubleClicked);
+    connect(ui->m_toFolderView, &QTreeView::clicked,
+            this, &Constructor::onFolderViewClicked);
+}
+
+// Открытие папки в представлении
+void Constructor::openFolderInView(const QString &path)
+{
+    QModelIndex targetIndex = m_fileSystemModel->index(path);
+    ui->m_toFolderView->setRootIndex(targetIndex);
+
+    // Получаем имя папки
+    QDir dir(path);
+    QString folderName = dir.dirName();
+    if (folderName.isEmpty()) {
+        folderName = path; // Для корневых папок типа "C:\"
+    }
+
+    // Устанавливаем заголовок окна с именем папки
+    setWindowTitle(QString("Constructor - %1").arg(folderName));
+
+    // Обновляем статусбар
+    statusBar()->showMessage(QString("Текущая папка: %1").arg(path), 5000);
+}
+
+// Открытие в проводнике
+void Constructor::openInExplorer(const QString &path)
+{
+    QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+}
+
+// Обработка клика с проверкой на Ctrl
+void Constructor::onFolderViewClicked(const QModelIndex &index)
+{
+    // Проверяем, нажат ли Ctrl
+    if (QApplication::keyboardModifiers() & Qt::ControlModifier) {
+        QFileInfo fileInfo = m_fileSystemModel->fileInfo(index);
+        QString path = fileInfo.absoluteFilePath();
+
+        // Открываем в проводнике с выделением файла/папки
+        if (fileInfo.isDir()) {
+            openInExplorer(path);
+        } else {
+            // Для файлов открываем папку и выделяем файл
+            QString explorerCmd = QString("explorer.exe /select,\"%1\"").arg(QDir::toNativeSeparators(path));
+            QProcess::startDetached(explorerCmd);
+        }
+
+        statusBar()->showMessage(QString("Открыто в проводнике: %1").arg(path), 3000);
+    }
+}
+
+// Обработка двойного клика в дереве файлов
+void Constructor::onFolderViewDoubleClicked(const QModelIndex &index)
+{
+    QFileInfo fileInfo = m_fileSystemModel->fileInfo(index);
+    if (fileInfo.isFile()) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(fileInfo.absoluteFilePath()));
+        statusBar()->showMessage(QString("Открыт файл: %1").arg(fileInfo.fileName()), 3000);
+    }
+}
+
+// Поиск папки заказа
+QString Constructor::findOrderFolder(const QString &orderNumber, const QString &basePath)
+{
+    if (basePath.isEmpty() || !QDir(basePath).exists()) {
+        return QString();
+    }
+
+    QDir dir(basePath);
+    const QStringList allFolders = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    QStringList foundFolders;
+
+    // Различные форматы имени папки
+    QStringList exactPatterns;
+    exactPatterns << "№ " + orderNumber;
+    exactPatterns << "№" + orderNumber;
+    exactPatterns << orderNumber;
+
+    // Поиск точных совпадений
+    for (const QString& folderName : allFolders) {
+        for (const QString& pattern : exactPatterns) {
+            if (folderName == pattern) {
+                foundFolders.append(folderName);
+                break;
+            }
+        }
+    }
+
+    // Если точных совпадений нет, ищем частичные
+    if (foundFolders.isEmpty()) {
+        for (const QString& folderName : allFolders) {
+            if (folderName.startsWith("№ ") && folderName.contains(orderNumber)) {
+                foundFolders.append(folderName);
+            }
+            else if (folderName.startsWith("№") && folderName.contains(orderNumber)) {
+                foundFolders.append(folderName);
+            }
+            else if (folderName.startsWith(orderNumber)) {
+                foundFolders.append(folderName);
+            }
+        }
+    }
+
+    // Последняя попытка - поиск по содержимому
+    if (foundFolders.isEmpty()) {
+        for (const QString& folderName : allFolders) {
+            if (folderName.contains(orderNumber, Qt::CaseInsensitive)) {
+                foundFolders.append(folderName);
+            }
+        }
+    }
+
+    if (foundFolders.isEmpty()) {
+        return QString();
+    }
+
+    // Если найдено несколько папок, показываем выбор
+    QString selectedFolder;
+    if (foundFolders.size() > 1) {
+        bool ok;
+        QString folderName = QInputDialog::getItem(this,
+                                                   "Выбор папки заказа",
+                                                   "Найдено несколько папок. Выберите нужную:",
+                                                   foundFolders,
+                                                   0,
+                                                   false,
+                                                   &ok);
+        if (ok && !folderName.isEmpty()) {
+            selectedFolder = folderName;
+        } else {
+            return QString();
+        }
+    } else {
+        selectedFolder = foundFolders.first();
+    }
+
+    return dir.filePath(selectedFolder);
 }
 
 // Валидация ввода номера заказа
@@ -141,516 +332,193 @@ bool Constructor::validateOrderInput(const QString& orderNumber)
     return true;
 }
 
-// Открытие папки заказа/
+// Открытие папки заказа в программе
 void Constructor::openOrderFolder()
 {
-    // Получаем номер заказа из поля ввода
     QString orderNumber = m_orderLineEdit->text().trimmed();
 
-    // Валидация ввода
     if (!validateOrderInput(orderNumber)) {
         return;
     }
 
-    // Проверяем существует ли директория ТО
-    QDir toDir(m_toFolder);
-    if (!toDir.exists()) {
-        QMessageBox::critical(this, "Ошибка",
-                              QString("Папка ТО не существует:\n%1\n\nПожалуйста, выберите правильную папку в меню 'Файл'.")
-                                  .arg(m_toFolder));
-        return;
-    }
+    QString orderFolderPath = findOrderFolder(orderNumber, m_toFolder);
 
-    // Формируем шаблоны для поиска
-    QString searchPattern1 = "№ " + orderNumber;           // "№ 123"
-    QString searchPattern2 = "№" + orderNumber;            // "№123"
-    QString searchPattern3 = orderNumber;                  // "123"
-
-    // Получаем список всех папок
-    QStringList allFolders = toDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-
-    // Ищем папки, соответствующие любому из шаблонов
-    QStringList foundFolders;
-
-    for (const QString& folderName : allFolders) {
-        // Проверяем точное соответствие
-        if (folderName == searchPattern1 || folderName == searchPattern2) {
-            foundFolders.append(folderName);
-        }
-        // Проверяем, начинается ли папка с "№ " и содержит номер заказа
-        else if (folderName.startsWith("№ ") && folderName.contains(orderNumber)) {
-            foundFolders.append(folderName);
-        }
-        // Проверяем, начинается ли папка с "№" и содержит номер заказа
-        else if (folderName.startsWith("№") && folderName.contains(orderNumber)) {
-            foundFolders.append(folderName);
-        }
-        // Проверяем, начинается ли папка просто с номера заказа
-        else if (folderName.startsWith(orderNumber)) {
-            foundFolders.append(folderName);
-        }
-    }
-
-    // Если папки не найдены, пробуем поискать с другим форматом
-    if (foundFolders.isEmpty()) {
-        for (const QString& folderName : allFolders) {
-            if (folderName.contains("№") && folderName.contains(orderNumber)) {
-                foundFolders.append(folderName);
-            }
-        }
-    }
-
-    if (foundFolders.isEmpty()) {
+    if (orderFolderPath.isEmpty()) {
         QMessageBox::information(this, "Не найдено",
                                  QString("Папка с заказом №%1 не найдена в:\n%2\n\n"
-                                         "Проверьте, что папка имеет формат:\n"
-                                         "- '№ %1'\n"
-                                         "- '№%1'\n"
-                                         "- или содержит '%1'")
-                                     .arg(orderNumber)
-                                     .arg(m_toFolder));
+                                         "Проверьте правильность номера заказа и выбранной папки ТО.")
+                                     .arg(orderNumber, m_toFolder));
         return;
     }
 
-    // Если найдено несколько папок, показываем выбор
-    QString selectedOrderFolder;
-    if (foundFolders.size() > 1) {
-        bool ok;
-        QString folderName = QInputDialog::getItem(this,
-                                                   "Выбор папки заказа",
-                                                   "Найдено несколько папок. Выберите нужную:",
-                                                   foundFolders,
-                                                   0,
-                                                   false,
-                                                   &ok);
-        if (ok && !folderName.isEmpty()) {
-            selectedOrderFolder = folderName;
-        } else {
-            return;
-        }
-    } else {
-        selectedOrderFolder = foundFolders.first();
+    // Проверяем, нажат ли Ctrl
+    if (QApplication::keyboardModifiers() & Qt::ControlModifier) {
+        openInExplorer(orderFolderPath);
+        return;
     }
 
-    // Формируем полный путь к папке заказа
-    QString orderFolderPath = toDir.filePath(selectedOrderFolder);
-
-    // Ищем подпапку "ТЗ" или "Техническое задание"
+    // Ищем подпапку "ТЗ"
     QDir orderDir(orderFolderPath);
-    QStringList tzFolders = orderDir.entryList(QStringList() << "ТЗ" << "ТЗ*" << "Техническое задание" << "Technical specification",
-                                               QDir::Dirs | QDir::NoDotAndDotDot);
+    const QStringList tzFolders = orderDir.entryList(QStringList() << "ТЗ" << "ТЗ*" << "Техническое задание" << "Technical specification",
+                                                     QDir::Dirs | QDir::NoDotAndDotDot);
 
-    if (tzFolders.isEmpty()) {
-        QMessageBox::warning(this, "Предупреждение",
-                             QString("В папке заказа не найдена папка 'ТЗ'.\nОткрываю корневую папку заказа:\n%1")
-                                 .arg(orderFolderPath));
-        // Открываем корневую папку заказа
-        QDesktopServices::openUrl(QUrl::fromLocalFile(orderFolderPath));
-        return;
-    }
+    QString targetPath = orderFolderPath;
 
-    // Берем первую найденную папку ТЗ (обычно она одна)
-    QString tzFolderName = tzFolders.first();
-    QString tzFolderPath = orderDir.filePath(tzFolderName);
+    if (!tzFolders.isEmpty()) {
+        QString tzPath = orderDir.filePath(tzFolders.first());
+        QDir tzDir(tzPath);
+        const QStringList dateFolders = tzDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
 
-    // Ищем в папке ТЗ подпапки с датами
-    QDir tzDir(tzFolderPath);
-    QStringList dateFolders = tzDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        if (!dateFolders.isEmpty()) {
+            // Находим папку с самой поздней датой
+            QDateTime latestDate;
+            QString latestFolder;
 
-    if (dateFolders.isEmpty()) {
-        QMessageBox::warning(this, "Предупреждение",
-                             QString("В папке ТЗ не найдено подпапок с датами.\nОткрываю папку ТЗ:\n%1")
-                                 .arg(tzFolderPath));
-        QDesktopServices::openUrl(QUrl::fromLocalFile(tzFolderPath));
-        return;
-    }
+            for (const QString& folderName : dateFolders) {
+                QRegularExpression dateRegex("(\\d{2})\\.(\\d{2})\\.(\\d{4})");
+                QRegularExpressionMatch match = dateRegex.match(folderName);
 
-    // Функция для парсинга даты из имени папки
-    auto parseDateFromFolder = [&tzFolderPath](const QString& folderName) -> QDateTime {
-        // Пробуем разные форматы дат
-        QRegularExpression dateRegex1("(\\d{2})\\.(\\d{2})\\.(\\d{4})"); // DD.MM.YYYY
-        QRegularExpression dateRegex2("(\\d{4})-(\\d{2})-(\\d{2})");     // YYYY-MM-DD
-        QRegularExpression dateRegex3("(\\d{2})-(\\d{2})-(\\d{4})");     // DD-MM-YYYY
-        QRegularExpression dateRegex4("(\\d{8})");                        // YYYYMMDD
+                if (match.hasMatch()) {
+                    int day = match.captured(1).toInt();
+                    int month = match.captured(2).toInt();
+                    int year = match.captured(3).toInt();
+                    QDateTime folderDate(QDate(year, month, day), QTime(0, 0));
 
-        QRegularExpressionMatch match = dateRegex1.match(folderName);
-        if (match.hasMatch()) {
-            int day = match.captured(1).toInt();
-            int month = match.captured(2).toInt();
-            int year = match.captured(3).toInt();
-            return QDateTime(QDate(year, month, day), QTime(0, 0));
-        }
-
-        match = dateRegex2.match(folderName);
-        if (match.hasMatch()) {
-            int year = match.captured(1).toInt();
-            int month = match.captured(2).toInt();
-            int day = match.captured(3).toInt();
-            return QDateTime(QDate(year, month, day), QTime(0, 0));
-        }
-
-        match = dateRegex3.match(folderName);
-        if (match.hasMatch()) {
-            int day = match.captured(1).toInt();
-            int month = match.captured(2).toInt();
-            int year = match.captured(3).toInt();
-            return QDateTime(QDate(year, month, day), QTime(0, 0));
-        }
-
-        match = dateRegex4.match(folderName);
-        if (match.hasMatch()) {
-            QString dateStr = match.captured(1);
-            if (dateStr.length() == 8) {
-                int year = dateStr.left(4).toInt();
-                int month = dateStr.mid(4, 2).toInt();
-                int day = dateStr.right(2).toInt();
-                return QDateTime(QDate(year, month, day), QTime(0, 0));
+                    if (!latestDate.isValid() || folderDate > latestDate) {
+                        latestDate = folderDate;
+                        latestFolder = folderName;
+                    }
+                }
             }
-        }
 
-        // Если дата не распознана, используем дату модификации папки
-        QDir dir(tzFolderPath + "/" + folderName);
-        QFileInfo info(dir.path());
-        return info.lastModified();
-    };
-
-    // Находим папку с самой ранней датой
-    QString earliestDateFolder;
-    QDateTime earliestDate;
-
-    for (const QString& folderName : dateFolders) {
-        QDateTime folderDate = parseDateFromFolder(folderName);
-        if (!earliestDate.isValid() || folderDate > earliestDate) {
-            earliestDate = folderDate;
-            earliestDateFolder = folderName;
+            if (!latestFolder.isEmpty()) {
+                targetPath = tzDir.filePath(latestFolder);
+            } else {
+                targetPath = tzPath;
+            }
+        } else {
+            targetPath = tzPath;
         }
     }
 
-    if (earliestDateFolder.isEmpty()) {
-        QMessageBox::warning(this, "Предупреждение",
-                             "Не удалось определить папку с самой ранней датой.\nОткрываю папку ТЗ.");
-        QDesktopServices::openUrl(QUrl::fromLocalFile(tzFolderPath));
-        return;
-    }
-
-    // Формируем полный путь к папке с самой ранней датой
-    QString finalPath = tzDir.filePath(earliestDateFolder);
-
-    // Открываем папку в проводнике (без сообщения об успехе)
-    bool opened = QDesktopServices::openUrl(QUrl::fromLocalFile(finalPath));
-
-    if (!opened) {
-        QMessageBox::critical(this, "Ошибка",
-                              QString("Не удалось открыть папку:\n%1")
-                                  .arg(finalPath));
-    }
+    // Отображаем папку в дереве
+    openFolderInView(targetPath);
 }
 
-// Открытие папки чертежей для заказа
+// Открытие папки чертежей в программе
 void Constructor::openDrawingsFolder()
 {
-    // Получаем номер заказа из поля ввода
     QString orderNumber = m_orderLineEdit->text().trimmed();
 
-    // Валидация ввода
     if (orderNumber.isEmpty()) {
         QMessageBox::warning(this, "Ошибка", "Пожалуйста, введите номер заказа!");
         return;
     }
 
-    // Проверяем, выбрана ли папка Чертежи
     if (m_drawingsFolder.isEmpty()) {
         QMessageBox::warning(this, "Ошибка", "Пожалуйста, выберите папку Чертежи в меню 'Файл'!");
         return;
     }
 
-    // Проверяем существует ли директория Чертежи
-    QDir drawingsDir(m_drawingsFolder);
-    if (!drawingsDir.exists()) {
-        QMessageBox::critical(this, "Ошибка",
-                              QString("Папка Чертежи не существует:\n%1\n\nПожалуйста, выберите правильную папку в меню 'Файл'.")
-                                  .arg(m_drawingsFolder));
-        return;
-    }
+    QString orderFolderPath = findOrderFolder(orderNumber, m_drawingsFolder);
 
-    // Получаем список всех папок
-    QStringList allFolders = drawingsDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-
-    // Ищем папки, которые начинаются с номера заказа
-    QStringList foundFolders;
-
-    for (const QString& folderName : allFolders) {
-        // Проверяем, начинается ли папка с номера заказа
-        if (folderName.startsWith(orderNumber)) {
-            foundFolders.append(folderName);
-        }
-    }
-
-    if (foundFolders.isEmpty()) {
+    if (orderFolderPath.isEmpty()) {
         QMessageBox::information(this, "Не найдено",
-                                 QString("Папка с чертежами для заказа №%1 не найдена в:\n%2\n\n"
-                                         "Папка должна начинаться с номера заказа '%3'")
-                                     .arg(orderNumber)
-                                     .arg(m_drawingsFolder)
-                                     .arg(orderNumber));
+                                 QString("Папка с чертежами для заказа №%1 не найдена в:\n%2")
+                                     .arg(orderNumber, m_drawingsFolder));
         return;
     }
 
-    // Если найдено несколько папок, показываем выбор
-    QString selectedFolder;
-    if (foundFolders.size() > 1) {
-        bool ok;
-        QString folderName = QInputDialog::getItem(this,
-                                                   "Выбор папки чертежей",
-                                                   "Найдено несколько папок. Выберите нужную:",
-                                                   foundFolders,
-                                                   0,
-                                                   false,
-                                                   &ok);
-        if (ok && !folderName.isEmpty()) {
-            selectedFolder = folderName;
-        } else {
-            return;
-        }
-    } else {
-        selectedFolder = foundFolders.first();
+    // Проверяем, нажат ли Ctrl
+    if (QApplication::keyboardModifiers() & Qt::ControlModifier) {
+        openInExplorer(orderFolderPath);
+        return;
     }
 
-    // Формируем полный путь к папке чертежей
-    QString drawingsFolderPath = drawingsDir.filePath(selectedFolder);
-
-    // Открываем папку в проводнике (без сообщения об успехе)
-    bool opened = QDesktopServices::openUrl(QUrl::fromLocalFile(drawingsFolderPath));
-
-    if (!opened) {
-        QMessageBox::critical(this, "Ошибка",
-                              QString("Не удалось открыть папку:\n%1")
-                                  .arg(drawingsFolderPath));
-    }
+    // Отображаем папку в дереве
+    openFolderInView(orderFolderPath);
 }
 
-// Открытие папки эскизов для заказа
+// Открытие папки эскизов в программе
 void Constructor::openSketchesFolder()
 {
-    // Получаем номер заказа из поля ввода
     QString orderNumber = m_orderLineEdit->text().trimmed();
 
-    // Валидация ввода
     if (!validateOrderInput(orderNumber)) {
         return;
     }
 
-    // Проверяем существует ли директория ТО
-    QDir toDir(m_toFolder);
-    if (!toDir.exists()) {
-        QMessageBox::critical(this, "Ошибка",
-                              QString("Папка ТО не существует:\n%1\n\nПожалуйста, выберите правильную папку в меню 'Файл'.")
-                                  .arg(m_toFolder));
-        return;
-    }
+    QString orderFolderPath = findOrderFolder(orderNumber, m_toFolder);
 
-    // Формируем шаблоны для поиска папки заказа
-    QString searchPattern1 = "№ " + orderNumber;
-    QString searchPattern2 = "№" + orderNumber;
-    QString searchPattern3 = orderNumber;
-
-    // Получаем список всех папок
-    QStringList allFolders = toDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-
-    // Ищем папку заказа
-    QStringList foundOrderFolders;
-
-    for (const QString& folderName : allFolders) {
-        if (folderName == searchPattern1 || folderName == searchPattern2) {
-            foundOrderFolders.append(folderName);
-        }
-        else if (folderName.startsWith("№ ") && folderName.contains(orderNumber)) {
-            foundOrderFolders.append(folderName);
-        }
-        else if (folderName.startsWith("№") && folderName.contains(orderNumber)) {
-            foundOrderFolders.append(folderName);
-        }
-        else if (folderName.startsWith(orderNumber)) {
-            foundOrderFolders.append(folderName);
-        }
-    }
-
-    if (foundOrderFolders.isEmpty()) {
-        for (const QString& folderName : allFolders) {
-            if (folderName.contains("№") && folderName.contains(orderNumber)) {
-                foundOrderFolders.append(folderName);
-            }
-        }
-    }
-
-    if (foundOrderFolders.isEmpty()) {
+    if (orderFolderPath.isEmpty()) {
         QMessageBox::information(this, "Не найдено",
                                  QString("Папка с заказом №%1 не найдена в:\n%2")
-                                     .arg(orderNumber)
-                                     .arg(m_toFolder));
+                                     .arg(orderNumber, m_toFolder));
         return;
     }
 
-    // Выбираем папку заказа
-    QString selectedOrderFolder;
-    if (foundOrderFolders.size() > 1) {
-        bool ok;
-        QString folderName = QInputDialog::getItem(this,
-                                                   "Выбор папки заказа",
-                                                   "Найдено несколько папок. Выберите нужную:",
-                                                   foundOrderFolders,
-                                                   0,
-                                                   false,
-                                                   &ok);
-        if (ok && !folderName.isEmpty()) {
-            selectedOrderFolder = folderName;
-        } else {
-            return;
-        }
-    } else {
-        selectedOrderFolder = foundOrderFolders.first();
+    // Проверяем, нажат ли Ctrl
+    if (QApplication::keyboardModifiers() & Qt::ControlModifier) {
+        openInExplorer(orderFolderPath);
+        return;
     }
 
-    // Формируем полный путь к папке заказа
-    QString orderFolderPath = toDir.filePath(selectedOrderFolder);
-
-    // Ищем подпапку "Эскизы" или "Sketch"
+    // Ищем подпапку "Эскизы"
     QDir orderDir(orderFolderPath);
-    QStringList sketchesFolders = orderDir.entryList(QStringList() << "Эскизы" << "Эскиз*" << "Sketch" << "Sketches",
-                                                     QDir::Dirs | QDir::NoDotAndDotDot);
+    const QStringList sketchesFolders = orderDir.entryList(QStringList() << "Эскизы" << "Эскиз*" << "Sketch" << "Sketches",
+                                                           QDir::Dirs | QDir::NoDotAndDotDot);
 
-    if (sketchesFolders.isEmpty()) {
-        QMessageBox::warning(this, "Предупреждение",
-                             QString("В папке заказа не найдена папка 'Эскизы'.\nОткрываю корневую папку заказа:\n%1")
-                                 .arg(orderFolderPath));
-        QDesktopServices::openUrl(QUrl::fromLocalFile(orderFolderPath));
-        return;
+    QString targetPath;
+
+    if (!sketchesFolders.isEmpty()) {
+        targetPath = orderDir.filePath(sketchesFolders.first());
+    } else {
+        targetPath = orderFolderPath;
     }
 
-    // Берем первую найденную папку Эскизы (обычно она одна)
-    QString sketchesFolderName = sketchesFolders.first();
-    QString sketchesFolderPath = orderDir.filePath(sketchesFolderName);
-
-    // Открываем папку Эскизы в проводнике (без сообщения об успехе)
-    bool opened = QDesktopServices::openUrl(QUrl::fromLocalFile(sketchesFolderPath));
-
-    if (!opened) {
-        QMessageBox::critical(this, "Ошибка",
-                              QString("Не удалось открыть папку:\n%1")
-                                  .arg(sketchesFolderPath));
-    }
+    // Отображаем папку в дереве
+    openFolderInView(targetPath);
 }
 
-// Открытие папки Чертежи в ТО (в папке заказа)
+// Открытие папки Чертежи в ТО в программе
 void Constructor::openDrawingsInTOFolder()
 {
-    // Получаем номер заказа из поля ввода
     QString orderNumber = m_orderLineEdit->text().trimmed();
 
-    // Валидация ввода
     if (!validateOrderInput(orderNumber)) {
         return;
     }
 
-    // Проверяем существует ли директория ТО
-    QDir toDir(m_toFolder);
-    if (!toDir.exists()) {
-        QMessageBox::critical(this, "Ошибка",
-                              QString("Папка ТО не существует:\n%1\n\nПожалуйста, выберите правильную папку в меню 'Файл'.")
-                                  .arg(m_toFolder));
-        return;
-    }
+    QString orderFolderPath = findOrderFolder(orderNumber, m_toFolder);
 
-    // Формируем шаблоны для поиска папки заказа
-    QString searchPattern1 = "№ " + orderNumber;
-    QString searchPattern2 = "№" + orderNumber;
-    QString searchPattern3 = orderNumber;
-
-    // Получаем список всех папок
-    QStringList allFolders = toDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-
-    // Ищем папку заказа
-    QStringList foundOrderFolders;
-
-    for (const QString& folderName : allFolders) {
-        if (folderName == searchPattern1 || folderName == searchPattern2) {
-            foundOrderFolders.append(folderName);
-        }
-        else if (folderName.startsWith("№ ") && folderName.contains(orderNumber)) {
-            foundOrderFolders.append(folderName);
-        }
-        else if (folderName.startsWith("№") && folderName.contains(orderNumber)) {
-            foundOrderFolders.append(folderName);
-        }
-        else if (folderName.startsWith(orderNumber)) {
-            foundOrderFolders.append(folderName);
-        }
-    }
-
-    if (foundOrderFolders.isEmpty()) {
-        for (const QString& folderName : allFolders) {
-            if (folderName.contains("№") && folderName.contains(orderNumber)) {
-                foundOrderFolders.append(folderName);
-            }
-        }
-    }
-
-    if (foundOrderFolders.isEmpty()) {
+    if (orderFolderPath.isEmpty()) {
         QMessageBox::information(this, "Не найдено",
                                  QString("Папка с заказом №%1 не найдена в:\n%2")
-                                     .arg(orderNumber)
-                                     .arg(m_toFolder));
+                                     .arg(orderNumber, m_toFolder));
         return;
     }
 
-    // Выбираем папку заказа
-    QString selectedOrderFolder;
-    if (foundOrderFolders.size() > 1) {
-        bool ok;
-        QString folderName = QInputDialog::getItem(this,
-                                                   "Выбор папки заказа",
-                                                   "Найдено несколько папок. Выберите нужную:",
-                                                   foundOrderFolders,
-                                                   0,
-                                                   false,
-                                                   &ok);
-        if (ok && !folderName.isEmpty()) {
-            selectedOrderFolder = folderName;
-        } else {
-            return;
-        }
-    } else {
-        selectedOrderFolder = foundOrderFolders.first();
+    // Проверяем, нажат ли Ctrl
+    if (QApplication::keyboardModifiers() & Qt::ControlModifier) {
+        openInExplorer(orderFolderPath);
+        return;
     }
 
-    // Формируем полный путь к папке заказа
-    QString orderFolderPath = toDir.filePath(selectedOrderFolder);
-
-    // Ищем подпапку "Чертежи" или "Drawings"
+    // Ищем подпапку "Чертежи"
     QDir orderDir(orderFolderPath);
-    QStringList drawingsFolders = orderDir.entryList(QStringList() << "Чертежи" << "Чертеж*" << "Drawings" << "Drawing",
-                                                     QDir::Dirs | QDir::NoDotAndDotDot);
+    const QStringList drawingsFolders = orderDir.entryList(QStringList() << "Чертежи" << "Чертеж*" << "Drawings" << "Drawing",
+                                                           QDir::Dirs | QDir::NoDotAndDotDot);
 
-    if (drawingsFolders.isEmpty()) {
-        QMessageBox::warning(this, "Предупреждение",
-                             QString("В папке заказа не найдена папка 'Чертежи'.\nОткрываю корневую папку заказа:\n%1")
-                                 .arg(orderFolderPath));
-        QDesktopServices::openUrl(QUrl::fromLocalFile(orderFolderPath));
-        return;
+    QString targetPath;
+
+    if (!drawingsFolders.isEmpty()) {
+        targetPath = orderDir.filePath(drawingsFolders.first());
+    } else {
+        targetPath = orderFolderPath;
     }
 
-    // Берем первую найденную папку Чертежи (обычно она одна)
-    QString drawingsFolderName = drawingsFolders.first();
-    QString drawingsFolderPath = orderDir.filePath(drawingsFolderName);
-
-    // Открываем папку Чертежи в проводнике (без сообщения об успехе)
-    bool opened = QDesktopServices::openUrl(QUrl::fromLocalFile(drawingsFolderPath));
-
-    if (!opened) {
-        QMessageBox::critical(this, "Ошибка",
-                              QString("Не удалось открыть папку:\n%1")
-                                  .arg(drawingsFolderPath));
-    }
+    // Отображаем папку в дереве
+    openFolderInView(targetPath);
 }
 
 // Копирование файлов из чертежей в папку ТО
@@ -700,8 +568,8 @@ void Constructor::copyToTOFolder()
     }
 
     // === Шаг 1: Найти папки заказа локально ===
+    const QStringList allLocalFolders = drawingsDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     QStringList localOrderCandidates;
-    QStringList allLocalFolders = drawingsDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
 
     for (const QString& folderName : allLocalFolders) {
         if (folderName.startsWith(orderNumber)) {
@@ -712,8 +580,7 @@ void Constructor::copyToTOFolder()
     if (localOrderCandidates.isEmpty()) {
         QMessageBox::critical(this, "Ошибка",
                               QString("Не найдена папка заказа '%1' в:\n%2")
-                                  .arg(orderNumber)
-                                  .arg(m_drawingsFolder));
+                                  .arg(orderNumber, m_drawingsFolder));
         return;
     }
 
@@ -741,8 +608,8 @@ void Constructor::copyToTOFolder()
 
                      // === Шаг 2: Найти папку изделия ===
                      QDir orderDir(orderFolderLocal);
+                     const QStringList allItemFolders = orderDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
                      QStringList itemCandidates;
-                     QStringList allItemFolders = orderDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
 
                      for (const QString& folderName : allItemFolders) {
                          if (folderName.startsWith(itemNumber)) {
@@ -753,8 +620,7 @@ void Constructor::copyToTOFolder()
                      if (itemCandidates.isEmpty()) {
                          QMessageBox::critical(this, "Ошибка",
                                                QString("Не найдена папка изделия '%1' в:\n%2")
-                                                   .arg(itemNumber)
-                                                   .arg(orderFolderLocal));
+                                                   .arg(itemNumber, orderFolderLocal));
                          return;
                      }
 
@@ -765,8 +631,8 @@ void Constructor::copyToTOFolder()
                                       QString itemFolderLocal = QDir(orderFolderLocal).filePath(itemFolderName);
 
                                       // === Шаг 3: Найти сетевую папку заказа ===
+                                      const QStringList allNetworkFolders = toDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
                                       QStringList networkOrderCandidates;
-                                      QStringList allNetworkFolders = toDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
 
                                       for (const QString& folderName : allNetworkFolders) {
                                           if (folderName.startsWith("№ " + orderNumber) || folderName.startsWith("№" + orderNumber)) {
@@ -777,8 +643,7 @@ void Constructor::copyToTOFolder()
                                       if (networkOrderCandidates.isEmpty()) {
                                           QMessageBox::critical(this, "Ошибка",
                                                                 QString("Не найдена сетевая папка '№ %1' в:\n%2")
-                                                                    .arg(orderNumber)
-                                                                    .arg(m_toFolder));
+                                                                    .arg(orderNumber, m_toFolder));
                                           return;
                                       }
 
@@ -820,24 +685,28 @@ void Constructor::copyToTOFolder()
                                           QDir().mkpath(targetItemFolder);
 
                                           // === Копирование файлов ===
-                                          QStringList extensionsMain = {".pdf", ".xls", ".bln", ".xbir"};  // Добавили .xbir
+                                          QStringList extensionsMain = {".pdf", ".xls", ".bln", ".xbir"};
                                           QStringList extensionsLaser = {".dxf", ".igs"};
+                                          QStringList extensionsSolidWorks = {".sldprt", ".sldasm", ".slddrw"};
 
                                           QStringList copiedFiles;
                                           QStringList laserFiles;
-                                          QStringList missingFiles;  // Список отсутствующих файлов
+                                          QStringList solidWorksFiles;
+                                          QStringList missingFiles;
 
                                           QDir itemDir(itemFolderLocal);
-                                          QStringList allFiles = itemDir.entryList(QDir::Files);
+                                          const QStringList allFiles = itemDir.entryList(QDir::Files);
 
                                           // Собираем информацию о найденных файлах
                                           for (const QString& fileName : allFiles) {
                                               QFileInfo fileInfo(fileName);
-                                              QString ext = fileInfo.suffix().toLower();
+                                              QString ext = "." + fileInfo.suffix().toLower();
 
-                                              if (extensionsLaser.contains("." + ext)) {
+                                              if (extensionsSolidWorks.contains(ext)) {
+                                                  solidWorksFiles.append(fileName);
+                                              } else if (extensionsLaser.contains(ext)) {
                                                   laserFiles.append(fileName);
-                                              } else if (extensionsMain.contains("." + ext)) {
+                                              } else if (extensionsMain.contains(ext)) {
                                                   copiedFiles.append(fileName);
                                               }
                                           }
@@ -882,6 +751,21 @@ void Constructor::copyToTOFolder()
                                               }
                                           }
 
+                                          // Копируем SolidWorks файлы в подпапку "SolidWorks"
+                                          if (!solidWorksFiles.isEmpty()) {
+                                              QString solidWorksFolder = QDir(targetItemFolder).filePath("SolidWorks");
+                                              QDir().mkpath(solidWorksFolder);
+
+                                              for (const QString& fileName : solidWorksFiles) {
+                                                  QString srcPath = itemDir.filePath(fileName);
+                                                  QString dstPath = QDir(solidWorksFolder).filePath(fileName);
+                                                  if (!QFile::copy(srcPath, dstPath)) {
+                                                      QMessageBox::warning(this, "Предупреждение",
+                                                                           QString("Не удалось скопировать файл:\n%1").arg(fileName));
+                                                  }
+                                              }
+                                          }
+
                                           // Формируем HTML отчет
                                           QString report = QString(
                                                                "<html>"
@@ -891,9 +775,7 @@ void Constructor::copyToTOFolder()
                                                                "<b>Исходная папка:</b><br>%2<br><br>"
                                                                "<b>Целевая папка:</b><br>%3<br><br>"
                                                                "<b>Скопировано основных файлов:</b> %4<br>"
-                                                               ).arg(itemNumber)
-                                                               .arg(itemFolderLocal)
-                                                               .arg(targetItemFolder)
+                                                               ).arg(itemNumber, itemFolderLocal, targetItemFolder)
                                                                .arg(copiedFiles.size());
 
                                           // Добавляем информацию об отсутствующих файлах
@@ -912,6 +794,14 @@ void Constructor::copyToTOFolder()
                                               report += "<br><b>Файлы для лазера не найдены.</b><br>";
                                           }
 
+                                          // Добавляем информацию о SolidWorks файлах
+                                          if (!solidWorksFiles.isEmpty()) {
+                                              report += QString("<br><b>Файлы SolidWorks (.SLDPRT/.SLDASM/.SLDDRW):</b> %1 → в папку 'SolidWorks'<br>")
+                                                            .arg(solidWorksFiles.size());
+                                          } else {
+                                              report += "<br><b>Файлы SolidWorks не найдены.</b><br>";
+                                          }
+
                                           // Список скопированных основных файлов
                                           if (!copiedFiles.isEmpty()) {
                                               report += "<br><b>Скопированные основные файлы:</b><br>";
@@ -925,6 +815,14 @@ void Constructor::copyToTOFolder()
                                               report += "<br><b>Скопированные лазерные файлы:</b><br>";
                                               for (const QString& fileName : laserFiles) {
                                                   report += QString("  • %1 → Лазер/<br>").arg(fileName);
+                                              }
+                                          }
+
+                                          // Список SolidWorks файлов
+                                          if (!solidWorksFiles.isEmpty()) {
+                                              report += "<br><b>Скопированные файлы SolidWorks:</b><br>";
+                                              for (const QString& fileName : solidWorksFiles) {
+                                                  report += QString("  • %1 → SolidWorks/<br>").arg(fileName);
                                               }
                                           }
 
@@ -979,7 +877,7 @@ void Constructor::selectTOFolder()
     if (!folder.isEmpty()) {
         m_toFolder = folder;
         saveSettings();
-        QMessageBox::information(this, "Информация", "Папка ТО успешно выбрана!");
+        openFolderInView(folder);
     }
 }
 
@@ -996,7 +894,7 @@ void Constructor::selectDrawingsFolder()
     if (!folder.isEmpty()) {
         m_drawingsFolder = folder;
         saveSettings();
-        QMessageBox::information(this, "Информация", "Папка Чертежи успешно выбрана!");
+        openFolderInView(folder);
     }
 }
 
@@ -1058,7 +956,6 @@ void Constructor::exitApplication()
 
 void Constructor::loadSettings()
 {
-    // Загружаем сохраненные пути к папкам
     m_toFolder = m_settings.value("to_folder", "").toString();
     m_drawingsFolder = m_settings.value("drawings_folder", "").toString();
     m_advertisingFolder = m_settings.value("advertising_folder", "").toString();
@@ -1068,7 +965,6 @@ void Constructor::loadSettings()
 
 void Constructor::saveSettings()
 {
-    // Сохраняем пути к папкам
     m_settings.setValue("to_folder", m_toFolder);
     m_settings.setValue("drawings_folder", m_drawingsFolder);
     m_settings.setValue("advertising_folder", m_advertisingFolder);
