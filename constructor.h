@@ -6,6 +6,7 @@
 #include <QLineEdit>
 #include <QFileSystemModel>
 #include <QTreeView>
+#include "sortfilterproxymodel.h"  // Добавляем инклуд
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class Constructor; }
@@ -46,12 +47,16 @@ private:
     QString findOrderFolder(const QString &orderNumber, const QString &basePath);
     void openFolderInView(const QString &path);
     void openInExplorer(const QString &path);
+    QString findTargetPath(const QString &orderFolderPath, const QString &buttonType);
 
     Ui::Constructor *ui;
     QSettings m_settings;
 
     // Модель файловой системы
     QFileSystemModel *m_fileSystemModel;
+
+    // Прокси-модель для сортировки
+    CustomSortProxyModel *m_proxyModel;
 
     // Пути к папкам
     QString m_toFolder;

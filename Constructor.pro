@@ -8,10 +8,12 @@ CONFIG += c++17
 
 SOURCES += \
     main.cpp \
-    constructor.cpp
+    constructor.cpp \
+    sortfilterproxymodel.cpp
 
 HEADERS += \
-    constructor.h
+    constructor.h \
+    sortfilterproxymodel.h
 
 FORMS += \
     constructor.ui

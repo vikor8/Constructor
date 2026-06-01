@@ -131,7 +131,7 @@ Constructor::Constructor(QWidget *parent)
     setWindowTitle("Constructor - Управление заказами");
 
     // Добавляем подсказку в статусбар
-    statusBar()->showMessage("Ctrl+Клик - открыть в проводнике | Двойной клик - открыть файл | Можно растягивать колонки");
+    statusBar()->showMessage("Ctrl+Клик - открыть в проводнике | Клик по заголовку - сортировка | Двойной клик - открыть файл");
 }
 
 Constructor::~Constructor()
@@ -141,38 +141,43 @@ Constructor::~Constructor()
 }
 
 // Настройка модели файловой системы
+// Настройка модели файловой системы
 void Constructor::setupFileSystemModel()
 {
     m_fileSystemModel = new QFileSystemModel(this);
     m_fileSystemModel->setRootPath(QDir::rootPath());
     m_fileSystemModel->setFilter(QDir::AllEntries | QDir::NoDotAndDotDot);
 
+    // Создаем прокси-модель для кастомной сортировки
+    m_proxyModel = new CustomSortProxyModel(this);
+    m_proxyModel->setSourceModel(m_fileSystemModel);
+    m_proxyModel->setDynamicSortFilter(true);
+
     // Настраиваем QTreeView из UI
-    ui->m_toFolderView->setModel(m_fileSystemModel);
+    ui->m_toFolderView->setModel(m_proxyModel);  // Используем прокси-модель вместо прямой
     ui->m_toFolderView->setSortingEnabled(true);
     ui->m_toFolderView->setAnimated(true);
     ui->m_toFolderView->setIndentation(20);
-    ui->m_toFolderView->setRootIndex(m_fileSystemModel->index(QDir::homePath()));
 
-    // Скрываем заголовок
-    ui->m_toFolderView->setHeaderHidden(true);
+    // Устанавливаем корневой индекс через прокси
+    QModelIndex sourceRoot = m_fileSystemModel->index(QDir::homePath());
+    QModelIndex proxyRoot = m_proxyModel->mapFromSource(sourceRoot);
+    ui->m_toFolderView->setRootIndex(proxyRoot);
 
-    // НАСТРОЙКА КОЛОНОК ДЛЯ РЕГУЛИРОВКИ РАЗМЕРА
-    // Разрешаем растягивать последнюю секцию
-    ui->m_toFolderView->header()->setStretchLastSection(true);
+    // ПОКАЗЫВАЕМ ЗАГОЛОВКИ КОЛОНОК
+    ui->m_toFolderView->setHeaderHidden(false);
 
-    // Устанавливаем режим изменения размера - можно растягивать
-    ui->m_toFolderView->header()->setSectionResizeMode(QHeaderView::Interactive);
+    // Настраиваем заголовки колонок
+    ui->m_toFolderView->header()->setSortIndicatorShown(true);
 
-    // Устанавливаем минимальную ширину для колонки с именем
-    ui->m_toFolderView->header()->setMinimumSectionSize(200);
+    // НАСТРОЙКА КОЛОНОК
+    ui->m_toFolderView->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    ui->m_toFolderView->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    ui->m_toFolderView->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    ui->m_toFolderView->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
 
-    // Начальная ширина колонки с именем
-    ui->m_toFolderView->setColumnWidth(0, 300);
-
-    // Разрешаем пользователю менять ширину колонок
-    ui->m_toFolderView->header()->setSectionsMovable(false);
-    ui->m_toFolderView->header()->setSectionsClickable(true);
+    // Устанавливаем сортировку по умолчанию (по имени)
+    ui->m_toFolderView->sortByColumn(0, Qt::AscendingOrder);
 
     // Подключаем обработчики кликов
     connect(ui->m_toFolderView, &QTreeView::doubleClicked,
@@ -181,17 +186,85 @@ void Constructor::setupFileSystemModel()
             this, &Constructor::onFolderViewClicked);
 }
 
+// Поиск целевой папки в зависимости от типа кнопки
+QString Constructor::findTargetPath(const QString &orderFolderPath, const QString &buttonType)
+{
+    QDir orderDir(orderFolderPath);
+
+    if (buttonType == "order") {
+        // Для кнопки "Заказ" - ищем ТЗ
+        const QStringList tzFolders = orderDir.entryList(QStringList() << "ТЗ" << "ТЗ*" << "Техническое задание" << "Technical specification",
+                                                         QDir::Dirs | QDir::NoDotAndDotDot);
+
+        if (!tzFolders.isEmpty()) {
+            QString tzPath = orderDir.filePath(tzFolders.first());
+            QDir tzDir(tzPath);
+            const QStringList dateFolders = tzDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+
+            if (!dateFolders.isEmpty()) {
+                QDateTime latestDate;
+                QString latestFolder;
+
+                for (const QString& folderName : dateFolders) {
+                    QRegularExpression dateRegex("(\\d{2})\\.(\\d{2})\\.(\\d{4})");
+                    QRegularExpressionMatch match = dateRegex.match(folderName);
+
+                    if (match.hasMatch()) {
+                        int day = match.captured(1).toInt();
+                        int month = match.captured(2).toInt();
+                        int year = match.captured(3).toInt();
+                        QDateTime folderDate(QDate(year, month, day), QTime(0, 0));
+
+                        if (!latestDate.isValid() || folderDate > latestDate) {
+                            latestDate = folderDate;
+                            latestFolder = folderName;
+                        }
+                    }
+                }
+
+                if (!latestFolder.isEmpty()) {
+                    return tzDir.filePath(latestFolder);
+                }
+            }
+            return tzPath;
+        }
+        return orderFolderPath;
+    }
+    else if (buttonType == "sketch") {
+        // Для кнопки "Эскизы"
+        const QStringList sketchesFolders = orderDir.entryList(QStringList() << "Эскизы" << "Эскиз*" << "Sketch" << "Sketches",
+                                                               QDir::Dirs | QDir::NoDotAndDotDot);
+        if (!sketchesFolders.isEmpty()) {
+            return orderDir.filePath(sketchesFolders.first());
+        }
+        return orderFolderPath;
+    }
+    else if (buttonType == "drawingsTO") {
+        // Для кнопки "Чертежи в ТО"
+        const QStringList drawingsFolders = orderDir.entryList(QStringList() << "Чертежи" << "Чертеж*" << "Drawings" << "Drawing",
+                                                               QDir::Dirs | QDir::NoDotAndDotDot);
+        if (!drawingsFolders.isEmpty()) {
+            return orderDir.filePath(drawingsFolders.first());
+        }
+        return orderFolderPath;
+    }
+
+    return orderFolderPath;
+}
+
+// Открытие папки в представлении
 // Открытие папки в представлении
 void Constructor::openFolderInView(const QString &path)
 {
-    QModelIndex targetIndex = m_fileSystemModel->index(path);
-    ui->m_toFolderView->setRootIndex(targetIndex);
+    QModelIndex sourceIndex = m_fileSystemModel->index(path);
+    QModelIndex proxyIndex = m_proxyModel->mapFromSource(sourceIndex);
+    ui->m_toFolderView->setRootIndex(proxyIndex);
 
     // Получаем имя папки
     QDir dir(path);
     QString folderName = dir.dirName();
     if (folderName.isEmpty()) {
-        folderName = path; // Для корневых папок типа "C:\"
+        folderName = path;
     }
 
     // Устанавливаем заголовок окна с именем папки
@@ -210,16 +283,15 @@ void Constructor::openInExplorer(const QString &path)
 // Обработка клика с проверкой на Ctrl
 void Constructor::onFolderViewClicked(const QModelIndex &index)
 {
-    // Проверяем, нажат ли Ctrl
     if (QApplication::keyboardModifiers() & Qt::ControlModifier) {
-        QFileInfo fileInfo = m_fileSystemModel->fileInfo(index);
+        // Получаем исходный индекс из файловой модели
+        QModelIndex sourceIndex = m_proxyModel->mapToSource(index);
+        QFileInfo fileInfo = m_fileSystemModel->fileInfo(sourceIndex);
         QString path = fileInfo.absoluteFilePath();
 
-        // Открываем в проводнике с выделением файла/папки
         if (fileInfo.isDir()) {
             openInExplorer(path);
         } else {
-            // Для файлов открываем папку и выделяем файл
             QString explorerCmd = QString("explorer.exe /select,\"%1\"").arg(QDir::toNativeSeparators(path));
             QProcess::startDetached(explorerCmd);
         }
@@ -231,7 +303,8 @@ void Constructor::onFolderViewClicked(const QModelIndex &index)
 // Обработка двойного клика в дереве файлов
 void Constructor::onFolderViewDoubleClicked(const QModelIndex &index)
 {
-    QFileInfo fileInfo = m_fileSystemModel->fileInfo(index);
+    QModelIndex sourceIndex = m_proxyModel->mapToSource(index);
+    QFileInfo fileInfo = m_fileSystemModel->fileInfo(sourceIndex);
     if (fileInfo.isFile()) {
         QDesktopServices::openUrl(QUrl::fromLocalFile(fileInfo.absoluteFilePath()));
         statusBar()->showMessage(QString("Открыт файл: %1").arg(fileInfo.fileName()), 3000);
@@ -351,54 +424,13 @@ void Constructor::openOrderFolder()
         return;
     }
 
+    // Находим целевую папку (ТЗ с датами)
+    QString targetPath = findTargetPath(orderFolderPath, "order");
+
     // Проверяем, нажат ли Ctrl
     if (QApplication::keyboardModifiers() & Qt::ControlModifier) {
-        openInExplorer(orderFolderPath);
+        openInExplorer(targetPath);
         return;
-    }
-
-    // Ищем подпапку "ТЗ"
-    QDir orderDir(orderFolderPath);
-    const QStringList tzFolders = orderDir.entryList(QStringList() << "ТЗ" << "ТЗ*" << "Техническое задание" << "Technical specification",
-                                                     QDir::Dirs | QDir::NoDotAndDotDot);
-
-    QString targetPath = orderFolderPath;
-
-    if (!tzFolders.isEmpty()) {
-        QString tzPath = orderDir.filePath(tzFolders.first());
-        QDir tzDir(tzPath);
-        const QStringList dateFolders = tzDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-
-        if (!dateFolders.isEmpty()) {
-            // Находим папку с самой поздней датой
-            QDateTime latestDate;
-            QString latestFolder;
-
-            for (const QString& folderName : dateFolders) {
-                QRegularExpression dateRegex("(\\d{2})\\.(\\d{2})\\.(\\d{4})");
-                QRegularExpressionMatch match = dateRegex.match(folderName);
-
-                if (match.hasMatch()) {
-                    int day = match.captured(1).toInt();
-                    int month = match.captured(2).toInt();
-                    int year = match.captured(3).toInt();
-                    QDateTime folderDate(QDate(year, month, day), QTime(0, 0));
-
-                    if (!latestDate.isValid() || folderDate > latestDate) {
-                        latestDate = folderDate;
-                        latestFolder = folderName;
-                    }
-                }
-            }
-
-            if (!latestFolder.isEmpty()) {
-                targetPath = tzDir.filePath(latestFolder);
-            } else {
-                targetPath = tzPath;
-            }
-        } else {
-            targetPath = tzPath;
-        }
     }
 
     // Отображаем папку в дереве
@@ -457,23 +489,13 @@ void Constructor::openSketchesFolder()
         return;
     }
 
+    // Находим целевую папку (Эскизы)
+    QString targetPath = findTargetPath(orderFolderPath, "sketch");
+
     // Проверяем, нажат ли Ctrl
     if (QApplication::keyboardModifiers() & Qt::ControlModifier) {
-        openInExplorer(orderFolderPath);
+        openInExplorer(targetPath);
         return;
-    }
-
-    // Ищем подпапку "Эскизы"
-    QDir orderDir(orderFolderPath);
-    const QStringList sketchesFolders = orderDir.entryList(QStringList() << "Эскизы" << "Эскиз*" << "Sketch" << "Sketches",
-                                                           QDir::Dirs | QDir::NoDotAndDotDot);
-
-    QString targetPath;
-
-    if (!sketchesFolders.isEmpty()) {
-        targetPath = orderDir.filePath(sketchesFolders.first());
-    } else {
-        targetPath = orderFolderPath;
     }
 
     // Отображаем папку в дереве
@@ -498,23 +520,13 @@ void Constructor::openDrawingsInTOFolder()
         return;
     }
 
+    // Находим целевую папку (Чертежи)
+    QString targetPath = findTargetPath(orderFolderPath, "drawingsTO");
+
     // Проверяем, нажат ли Ctrl
     if (QApplication::keyboardModifiers() & Qt::ControlModifier) {
-        openInExplorer(orderFolderPath);
+        openInExplorer(targetPath);
         return;
-    }
-
-    // Ищем подпапку "Чертежи"
-    QDir orderDir(orderFolderPath);
-    const QStringList drawingsFolders = orderDir.entryList(QStringList() << "Чертежи" << "Чертеж*" << "Drawings" << "Drawing",
-                                                           QDir::Dirs | QDir::NoDotAndDotDot);
-
-    QString targetPath;
-
-    if (!drawingsFolders.isEmpty()) {
-        targetPath = orderDir.filePath(drawingsFolders.first());
-    } else {
-        targetPath = orderFolderPath;
     }
 
     // Отображаем папку в дереве
