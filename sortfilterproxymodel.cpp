@@ -3,6 +3,48 @@
 CustomSortProxyModel::CustomSortProxyModel(QObject *parent)
     : QSortFilterProxyModel(parent)
 {
+    // Приоритет по умолчанию
+    m_filePriorityList = QStringList()
+                         << "pdf"
+                         << "bln"
+                         << "b3d"
+                         << "xls"
+                         << "xlsx"
+                         << "dxf"
+                         << "igs"
+                         << "sldprt"
+                         << "sldasm"
+                         << "slddrw"
+                         << "xbir";
+
+    loadSettings();
+}
+
+void CustomSortProxyModel::setFilePriority(const QStringList &priorityList)
+{
+    m_filePriorityList = priorityList;
+    saveSettings();
+    invalidate(); // Пересортировать
+}
+
+QStringList CustomSortProxyModel::getFilePriority() const
+{
+    return m_filePriorityList;
+}
+
+void CustomSortProxyModel::loadSettings()
+{
+    QSettings settings("Best-studio", "ConstructorApp");
+    QStringList saved = settings.value("file_priority", m_filePriorityList).toStringList();
+    if (!saved.isEmpty()) {
+        m_filePriorityList = saved;
+    }
+}
+
+void CustomSortProxyModel::saveSettings()
+{
+    QSettings settings("Best-studio", "ConstructorApp");
+    settings.setValue("file_priority", m_filePriorityList);
 }
 
 bool CustomSortProxyModel::lessThan(const QModelIndex &left, const QModelIndex &right) const
@@ -25,8 +67,11 @@ bool CustomSortProxyModel::lessThan(const QModelIndex &left, const QModelIndex &
 
     // Если оба файла - сортируем по типу
     if (!leftInfo.isDir() && !rightInfo.isDir()) {
-        int leftPriority = getFilePriority(leftInfo.suffix().toLower());
-        int rightPriority = getFilePriority(rightInfo.suffix().toLower());
+        QString leftSuffix = leftInfo.suffix().toLower();
+        QString rightSuffix = rightInfo.suffix().toLower();
+
+        int leftPriority = getFilePriority(leftSuffix);
+        int rightPriority = getFilePriority(rightSuffix);
 
         if (leftPriority != rightPriority) {
             if (sortOrder() == Qt::AscendingOrder) {
@@ -50,15 +95,23 @@ bool CustomSortProxyModel::lessThan(const QModelIndex &left, const QModelIndex &
 
 int CustomSortProxyModel::getFilePriority(const QString &suffix) const
 {
-    // Приоритеты: меньше число = выше в списке
-    if (suffix == "pdf") return 0;
-    if (suffix == "bln") return 1;
-    if (suffix == "b3d") return 2;
-    if (suffix == "xls" || suffix == "xlsx") return 3;
-    if (suffix == "dxf") return 4;
-    if (suffix == "igs") return 5;
-    if (suffix == "sldprt" || suffix == "sldasm" || suffix == "slddrw") return 6;
-    if (suffix == "xbir") return 7;
+    // Проверяем, есть ли в списке приоритетов
+    int index = m_filePriorityList.indexOf(suffix);
+    if (index >= 0) {
+        return index;
+    }
 
-    return 100; // Остальные файлы в конце
+    // Файлы со знаком $ в имени - самые последние
+    if (suffix.contains('$')) {
+        return 9999;
+    }
+
+    // Группируем остальные файлы по типу
+    // Возвращаем хеш суффикса + большое смещение
+    if (!suffix.isEmpty()) {
+        return 1000 + qHash(suffix) % 1000;
+    }
+
+    // Файлы без расширения
+    return 2000;
 }

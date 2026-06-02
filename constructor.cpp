@@ -59,6 +59,8 @@ Constructor::Constructor(QWidget *parent)
     QAction *glassFolderAction = fileMenu->addAction("Цех стекла");
     QAction *databaseFolderAction = fileMenu->addAction("База данных");
     fileMenu->addSeparator();
+    QAction *sortSettingsAction = fileMenu->addAction("Сортировка");
+    fileMenu->addSeparator();
     QAction *exitAction = fileMenu->addAction("Выход");
 
     // Подключаем сигналы к слотам
@@ -67,6 +69,7 @@ Constructor::Constructor(QWidget *parent)
     connect(advertisingFolderAction, &QAction::triggered, this, &Constructor::selectAdvertisingFolder);
     connect(glassFolderAction, &QAction::triggered, this, &Constructor::selectGlassFolder);
     connect(databaseFolderAction, &QAction::triggered, this, &Constructor::selectDatabaseFolder);
+    connect(sortSettingsAction, &QAction::triggered, this, &Constructor::showSortSettingsDialog);
     connect(exitAction, &QAction::triggered, this, &Constructor::exitApplication);
 
     // Устанавливаем менюбар для главного окна
@@ -141,7 +144,6 @@ Constructor::~Constructor()
 }
 
 // Настройка модели файловой системы
-// Настройка модели файловой системы
 void Constructor::setupFileSystemModel()
 {
     m_fileSystemModel = new QFileSystemModel(this);
@@ -154,7 +156,7 @@ void Constructor::setupFileSystemModel()
     m_proxyModel->setDynamicSortFilter(true);
 
     // Настраиваем QTreeView из UI
-    ui->m_toFolderView->setModel(m_proxyModel);  // Используем прокси-модель вместо прямой
+    ui->m_toFolderView->setModel(m_proxyModel);
     ui->m_toFolderView->setSortingEnabled(true);
     ui->m_toFolderView->setAnimated(true);
     ui->m_toFolderView->setIndentation(20);
@@ -166,17 +168,18 @@ void Constructor::setupFileSystemModel()
 
     // ПОКАЗЫВАЕМ ЗАГОЛОВКИ КОЛОНОК
     ui->m_toFolderView->setHeaderHidden(false);
-
-    // Настраиваем заголовки колонок
     ui->m_toFolderView->header()->setSortIndicatorShown(true);
 
-    // НАСТРОЙКА КОЛОНОК
+    // НАСТРОЙКА КОЛОНОК - Size и Date Modified поменяны местами
     ui->m_toFolderView->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     ui->m_toFolderView->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     ui->m_toFolderView->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     ui->m_toFolderView->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
 
-    // Устанавливаем сортировку по умолчанию (по имени)
+    // Меняем местами колонки Size и Date Modified
+    ui->m_toFolderView->header()->swapSections(1, 3);
+
+    // Устанавливаем сортировку по умолчанию
     ui->m_toFolderView->sortByColumn(0, Qt::AscendingOrder);
 
     // Подключаем обработчики кликов
@@ -982,4 +985,101 @@ void Constructor::saveSettings()
     m_settings.setValue("advertising_folder", m_advertisingFolder);
     m_settings.setValue("glass_folder", m_glassFolder);
     m_settings.setValue("database_folder", m_databaseFolder);
+}
+
+void Constructor::showSortSettingsDialog()
+{
+    // Создаем диалог
+    QDialog dialog(this);
+    dialog.setWindowTitle("Настройка сортировки файлов");
+    dialog.setMinimumSize(500, 400);
+
+    QVBoxLayout *mainLayout = new QVBoxLayout(&dialog);
+
+    QLabel *infoLabel = new QLabel(
+        "Настройте порядок типов файлов для сортировки.\n"
+        "Перетащите элементы для изменения порядка.\n"
+        "Типы файлов со знаком $ всегда будут в конце.");
+    infoLabel->setWordWrap(true);
+    mainLayout->addWidget(infoLabel);
+
+    // Список типов файлов
+    QGroupBox *groupBox = new QGroupBox("Порядок типов файлов:");
+    QVBoxLayout *groupLayout = new QVBoxLayout(groupBox);
+
+    QListWidget *listWidget = new QListWidget();
+    listWidget->setDragDropMode(QAbstractItemView::InternalMove);
+    listWidget->setSelectionMode(QAbstractItemView::SingleSelection);
+
+    // Загружаем текущий порядок
+    QStringList currentPriority = m_proxyModel->getFilePriority();
+    for (const QString &ext : currentPriority) {
+        QListWidgetItem *item = new QListWidgetItem(ext);
+        item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
+        listWidget->addItem(item);
+    }
+
+    groupLayout->addWidget(listWidget);
+
+    // Кнопки добавить/удалить
+    QHBoxLayout *buttonsLayout = new QHBoxLayout();
+
+    QLineEdit *newExtEdit = new QLineEdit();
+    newExtEdit->setPlaceholderText("Новое расширение (без точки)");
+    buttonsLayout->addWidget(newExtEdit);
+
+    QPushButton *addButton = new QPushButton("Добавить");
+    buttonsLayout->addWidget(addButton);
+
+    QPushButton *removeButton = new QPushButton("Удалить");
+    buttonsLayout->addWidget(removeButton);
+
+    groupLayout->addLayout(buttonsLayout);
+
+    connect(addButton, &QPushButton::clicked, [listWidget, newExtEdit]() {
+        QString newExt = newExtEdit->text().trimmed().toLower();
+        if (!newExt.isEmpty()) {
+            // Проверяем, нет ли уже такого
+            for (int i = 0; i < listWidget->count(); ++i) {
+                if (listWidget->item(i)->text() == newExt) {
+                    QMessageBox::information(nullptr, "Информация",
+                                             "Такое расширение уже есть в списке.");
+                    return;
+                }
+            }
+            QListWidgetItem *item = new QListWidgetItem(newExt);
+            item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
+            listWidget->addItem(item);
+            newExtEdit->clear();
+        }
+    });
+
+    connect(removeButton, &QPushButton::clicked, [listWidget]() {
+        QListWidgetItem *currentItem = listWidget->currentItem();
+        if (currentItem) {
+            delete listWidget->takeItem(listWidget->row(currentItem));
+        }
+    });
+
+    mainLayout->addWidget(groupBox);
+
+    // Кнопки OK/Cancel
+    QDialogButtonBox *buttonBox = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    mainLayout->addWidget(buttonBox);
+
+    connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        // Сохраняем новый порядок
+        QStringList newPriority;
+        for (int i = 0; i < listWidget->count(); ++i) {
+            newPriority << listWidget->item(i)->text();
+        }
+        m_proxyModel->setFilePriority(newPriority);
+
+        QMessageBox::information(this, "Успех",
+                                 "Порядок сортировки обновлен. Изменения вступят в силу сразу.");
+    }
 }

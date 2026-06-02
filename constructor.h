@@ -6,7 +6,14 @@
 #include <QLineEdit>
 #include <QFileSystemModel>
 #include <QTreeView>
-#include "sortfilterproxymodel.h"  // Добавляем инклуд
+#include "sortfilterproxymodel.h"
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QListWidget>
+#include <QPushButton>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
+#include <QGroupBox>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class Constructor; }
@@ -32,11 +39,9 @@ private slots:
     void openSketchesFolder();
     void openDrawingsInTOFolder();
     void copyToTOFolder();
+    void showSortSettingsDialog();
 
-    // Слот для обработки двойного клика в дереве файлов
     void onFolderViewDoubleClicked(const QModelIndex &index);
-
-    // Слот для обработки клика с клавишами-модификаторами
     void onFolderViewClicked(const QModelIndex &index);
 
 private:
@@ -52,20 +57,15 @@ private:
     Ui::Constructor *ui;
     QSettings m_settings;
 
-    // Модель файловой системы
     QFileSystemModel *m_fileSystemModel;
-
-    // Прокси-модель для сортировки
     CustomSortProxyModel *m_proxyModel;
 
-    // Пути к папкам
     QString m_toFolder;
     QString m_drawingsFolder;
     QString m_advertisingFolder;
     QString m_glassFolder;
     QString m_databaseFolder;
 
-    // Указатели на виджеты
     QLineEdit *m_orderLineEdit;
     QLineEdit *m_productLineEdit;
 };
