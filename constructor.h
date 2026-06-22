@@ -44,6 +44,11 @@ private slots:
     void onFolderViewDoubleClicked(const QModelIndex &index);
     void onFolderViewClicked(const QModelIndex &index);
 
+    void copyFileName();
+    void copyArticul();
+
+    void refreshCurrentView();
+
 private:
     void loadSettings();
     void saveSettings();

@@ -21,6 +21,8 @@
 #include <QApplication>
 #include <QProcess>
 #include <QVBoxLayout>
+#include <QClipboard>
+#include <QRegularExpression>
 
 Constructor::Constructor(QWidget *parent)
     : QMainWindow(parent)
@@ -120,6 +122,12 @@ Constructor::Constructor(QWidget *parent)
     QAction *actionProduction = tbar2->addAction("Изделие");
     QAction *actionTO = tbar2->addAction("ТО");
     QAction *actionTOMove = tbar2->addAction("->ТО");
+     tbar2->addSeparator();
+    QAction *actionCopyName = tbar2->addAction("Имя");
+    QAction *actionCopyArticul = tbar2->addAction("Артикул");
+
+    connect(actionCopyName, &QAction::triggered, this, &Constructor::copyFileName);
+    connect(actionCopyArticul, &QAction::triggered, this, &Constructor::copyArticul);
 
     // Подключаем кнопки второго тулбара
     connect(actionProduction, &QAction::triggered, [this]() {
@@ -129,6 +137,8 @@ Constructor::Constructor(QWidget *parent)
         QMessageBox::information(this, "Информация", "Функция в разработке");
     });
     connect(actionTOMove, &QAction::triggered, this, &Constructor::copyToTOFolder);
+    connect(actionCopyName, &QAction::triggered, this, &Constructor::copyFileName);
+    connect(actionCopyArticul, &QAction::triggered, this, &Constructor::copyArticul);
 
     // Устанавливаем заголовок окна
     setWindowTitle("Constructor - Управление заказами");
@@ -858,6 +868,7 @@ void Constructor::copyToTOFolder()
                                           }
 
                                           msgBox.exec();
+                                          refreshCurrentView();
                                       };
 
                                       if (networkOrderCandidates.size() == 1) {
@@ -877,6 +888,14 @@ void Constructor::copyToTOFolder()
                                       }
                                   });
                  });
+
+    // Обновляем текущее отображение, чтобы увидеть новую папку
+    QModelIndex currentRoot = ui->m_toFolderView->rootIndex();
+    if (currentRoot.isValid()) {
+        // Получаем путь
+        QFileInfo currentPath = m_fileSystemModel->fileInfo(m_proxyModel->mapToSource(currentRoot));
+        openFolderInView(currentPath.absoluteFilePath());
+    }
 }
 
 // Выбор папки ТО
@@ -1081,5 +1100,74 @@ void Constructor::showSortSettingsDialog()
 
         QMessageBox::information(this, "Успех",
                                  "Порядок сортировки обновлен. Изменения вступят в силу сразу.");
+    }
+}
+void Constructor::copyFileName()
+{
+    // Получаем текущий индекс в QTreeView
+    QModelIndex proxyIndex = ui->m_toFolderView->currentIndex();
+    if (!proxyIndex.isValid()) {
+        QMessageBox::information(this, "Информация", "Выберите файл в дереве.");
+        return;
+    }
+
+    // Преобразуем в исходный индекс файловой модели
+    QModelIndex sourceIndex = m_proxyModel->mapToSource(proxyIndex);
+    QFileInfo fileInfo = m_fileSystemModel->fileInfo(sourceIndex);
+
+    if (!fileInfo.isFile()) {
+        QMessageBox::information(this, "Информация", "Выберите файл, а не папку.");
+        return;
+    }
+
+    // Имя файла без расширения
+    QString baseName = fileInfo.completeBaseName();
+    if (baseName.isEmpty()) {
+        QMessageBox::warning(this, "Ошибка", "Не удалось определить имя файла.");
+        return;
+    }
+
+    QApplication::clipboard()->setText(baseName);
+    statusBar()->showMessage(QString("Имя скопировано: %1").arg(baseName), 3000);
+}
+
+void Constructor::copyArticul()
+{
+    QModelIndex proxyIndex = ui->m_toFolderView->currentIndex();
+    if (!proxyIndex.isValid()) {
+        QMessageBox::information(this, "Информация", "Выберите файл в дереве.");
+        return;
+    }
+
+    QModelIndex sourceIndex = m_proxyModel->mapToSource(proxyIndex);
+    QFileInfo fileInfo = m_fileSystemModel->fileInfo(sourceIndex);
+
+    if (!fileInfo.isFile()) {
+        QMessageBox::information(this, "Информация", "Выберите файл, а не папку.");
+        return;
+    }
+
+    QString baseName = fileInfo.completeBaseName();
+    if (baseName.isEmpty()) {
+        QMessageBox::warning(this, "Ошибка", "Не удалось определить артикул.");
+        return;
+    }
+
+    // Артикул - первая часть имени до пробела или подчеркивания
+    QString articul = baseName.section(QRegularExpression("[ _]"), 0, 0);
+
+    QApplication::clipboard()->setText(articul);
+    statusBar()->showMessage(QString("Артикул скопирован: %1").arg(articul), 3000);
+}
+
+void Constructor::refreshCurrentView()
+{
+    QModelIndex proxyRoot = ui->m_toFolderView->rootIndex();
+    if (proxyRoot.isValid()) {
+        QModelIndex sourceRoot = m_proxyModel->mapToSource(proxyRoot);
+        QString path = m_fileSystemModel->filePath(sourceRoot);
+        m_fileSystemModel->fetchMore(m_fileSystemModel->index(path));
+        // или просто openFolderInView(path) для полной перезагрузки
+        openFolderInView(path);
     }
 }
