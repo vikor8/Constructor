@@ -156,6 +156,15 @@ Constructor::~Constructor()
 // Настройка модели файловой системы
 void Constructor::setupFileSystemModel()
 {
+    // Включаем Drag & Drop (только копирование наружу)
+    ui->m_toFolderView->setDragEnabled(true);
+    ui->m_toFolderView->setAcceptDrops(false);           // не принимаем файлы извне
+    ui->m_toFolderView->setDropIndicatorShown(false);
+    ui->m_toFolderView->setDragDropMode(QAbstractItemView::DragOnly);
+
+    // Разрешаем выделение нескольких файлов для перетаскивания
+    ui->m_toFolderView->setSelectionMode(QAbstractItemView::ExtendedSelection);
+
     m_fileSystemModel = new QFileSystemModel(this);
     m_fileSystemModel->setRootPath(QDir::rootPath());
     m_fileSystemModel->setFilter(QDir::AllEntries | QDir::NoDotAndDotDot);
