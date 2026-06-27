@@ -1102,58 +1102,57 @@ void Constructor::showSortSettingsDialog()
                                  "Порядок сортировки обновлен. Изменения вступят в силу сразу.");
     }
 }
+
 void Constructor::copyFileName()
 {
-    // Получаем текущий индекс в QTreeView
     QModelIndex proxyIndex = ui->m_toFolderView->currentIndex();
     if (!proxyIndex.isValid()) {
-        QMessageBox::information(this, "Информация", "Выберите файл в дереве.");
+        QMessageBox::information(this, "Информация", "Выберите файл или папку.");
         return;
     }
 
-    // Преобразуем в исходный индекс файловой модели
     QModelIndex sourceIndex = m_proxyModel->mapToSource(proxyIndex);
     QFileInfo fileInfo = m_fileSystemModel->fileInfo(sourceIndex);
 
-    if (!fileInfo.isFile()) {
-        QMessageBox::information(this, "Информация", "Выберите файл, а не папку.");
+    QString name;
+    if (fileInfo.isDir()) {
+        name = fileInfo.fileName(); // исправлено
+    } else {
+        name = fileInfo.completeBaseName();
+    }
+
+    if (name.isEmpty()) {
+        QMessageBox::warning(this, "Ошибка", "Не удалось определить имя.");
         return;
     }
 
-    // Имя файла без расширения
-    QString baseName = fileInfo.completeBaseName();
-    if (baseName.isEmpty()) {
-        QMessageBox::warning(this, "Ошибка", "Не удалось определить имя файла.");
-        return;
-    }
-
-    QApplication::clipboard()->setText(baseName);
-    statusBar()->showMessage(QString("Имя скопировано: %1").arg(baseName), 3000);
+    QApplication::clipboard()->setText(name);
+    statusBar()->showMessage(QString("Имя скопировано: %1").arg(name), 3000);
 }
 
 void Constructor::copyArticul()
 {
     QModelIndex proxyIndex = ui->m_toFolderView->currentIndex();
     if (!proxyIndex.isValid()) {
-        QMessageBox::information(this, "Информация", "Выберите файл в дереве.");
+        QMessageBox::information(this, "Информация", "Выберите файл или папку.");
         return;
     }
 
     QModelIndex sourceIndex = m_proxyModel->mapToSource(proxyIndex);
     QFileInfo fileInfo = m_fileSystemModel->fileInfo(sourceIndex);
 
-    if (!fileInfo.isFile()) {
-        QMessageBox::information(this, "Информация", "Выберите файл, а не папку.");
-        return;
+    QString baseName;
+    if (fileInfo.isDir()) {
+        baseName = fileInfo.fileName(); // исправлено
+    } else {
+        baseName = fileInfo.completeBaseName();
     }
 
-    QString baseName = fileInfo.completeBaseName();
     if (baseName.isEmpty()) {
-        QMessageBox::warning(this, "Ошибка", "Не удалось определить артикул.");
+        QMessageBox::warning(this, "Ошибка", "Не удалось определить имя.");
         return;
     }
 
-    // Артикул - первая часть имени до пробела или подчеркивания
     QString articul = baseName.section(QRegularExpression("[ _]"), 0, 0);
 
     QApplication::clipboard()->setText(articul);
@@ -1163,11 +1162,18 @@ void Constructor::copyArticul()
 void Constructor::refreshCurrentView()
 {
     QModelIndex proxyRoot = ui->m_toFolderView->rootIndex();
-    if (proxyRoot.isValid()) {
-        QModelIndex sourceRoot = m_proxyModel->mapToSource(proxyRoot);
-        QString path = m_fileSystemModel->filePath(sourceRoot);
-        m_fileSystemModel->fetchMore(m_fileSystemModel->index(path));
-        // или просто openFolderInView(path) для полной перезагрузки
-        openFolderInView(path);
-    }
+    if (!proxyRoot.isValid())
+        return;
+
+    QModelIndex sourceRoot = m_proxyModel->mapToSource(proxyRoot);
+    QString currentPath = m_fileSystemModel->filePath(sourceRoot);
+
+    // Принудительно перезагружаем содержимое текущей папки
+    m_fileSystemModel->setRootPath(QDir::rootPath());   // сброс
+    m_fileSystemModel->setRootPath(currentPath);        // перезагрузка нужной папки
+
+    QModelIndex newSourceRoot = m_fileSystemModel->index(currentPath);
+    QModelIndex newProxyRoot = m_proxyModel->mapFromSource(newSourceRoot);
+    ui->m_toFolderView->setRootIndex(newProxyRoot);
+    ui->m_toFolderView->expand(newProxyRoot);           // раскрываем обновлённую папку
 }
