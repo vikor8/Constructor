@@ -29,8 +29,9 @@ Constructor::Constructor(QWidget *parent)
     , ui(new Ui::Constructor)
     , m_settings("Best-studio", "ConstructorApp")
     , m_fileSystemModel(nullptr)
-    , m_orderLineEdit(nullptr)
+    , m_orderCombo(nullptr)
     , m_productLineEdit(nullptr)
+    , m_maxHistoryDisplay(3)
 {
     ui->setupUi(this);
 
@@ -62,6 +63,7 @@ Constructor::Constructor(QWidget *parent)
     QAction *databaseFolderAction = fileMenu->addAction("База данных");
     fileMenu->addSeparator();
     QAction *sortSettingsAction = fileMenu->addAction("Сортировка");
+    QAction *historySettingsAction = fileMenu->addAction("Настройка истории заказов");
     fileMenu->addSeparator();
     QAction *exitAction = fileMenu->addAction("Выход");
 
@@ -72,6 +74,7 @@ Constructor::Constructor(QWidget *parent)
     connect(glassFolderAction, &QAction::triggered, this, &Constructor::selectGlassFolder);
     connect(databaseFolderAction, &QAction::triggered, this, &Constructor::selectDatabaseFolder);
     connect(sortSettingsAction, &QAction::triggered, this, &Constructor::showSortSettingsDialog);
+    connect(historySettingsAction, &QAction::triggered, this, &Constructor::showHistorySettingsDialog);
     connect(exitAction, &QAction::triggered, this, &Constructor::exitApplication);
 
     // Устанавливаем менюбар для главного окна
@@ -83,11 +86,16 @@ Constructor::Constructor(QWidget *parent)
     tbar->setOrientation(Qt::Vertical);
     addToolBar(Qt::LeftToolBarArea, tbar);
 
-    // Создаем и добавляем QLineEdit
-    m_orderLineEdit = new QLineEdit(tbar);
-    m_orderLineEdit->setPlaceholderText("Заказ");
-    m_orderLineEdit->setMaximumWidth(70);
-    tbar->addWidget(m_orderLineEdit);
+
+
+    // Создаём комбобокс с возможностью редактирования
+    m_orderCombo = new QComboBox(tbar);
+    m_orderCombo->setEditable(true);
+    m_orderCombo->setMaximumWidth(70);
+    m_orderCombo->lineEdit()->setPlaceholderText("Заказ");
+    // Загружаем последние maxHistoryDisplay элементов
+    updateOrderCombo();   // реализуем отдельным методом
+    tbar->addWidget(m_orderCombo);
 
     // Добавляем кнопки
     QAction *actionOrder = tbar->addAction("Заказ");
@@ -430,11 +438,10 @@ bool Constructor::validateOrderInput(const QString& orderNumber)
 // Открытие папки заказа в программе
 void Constructor::openOrderFolder()
 {
-    QString orderNumber = m_orderLineEdit->text().trimmed();
+    QString orderNumber = m_orderCombo->currentText().trimmed();
 
-    if (!validateOrderInput(orderNumber)) {
+    if (!validateOrderInput(orderNumber))
         return;
-    }
 
     QString orderFolderPath = findOrderFolder(orderNumber, m_toFolder);
 
@@ -446,23 +453,28 @@ void Constructor::openOrderFolder()
         return;
     }
 
-    // Находим целевую папку (ТЗ с датами)
+    // === Обновление истории ===
+    m_orderHistory.removeAll(orderNumber);   // удаляем дубликат, если был
+    m_orderHistory.prepend(orderNumber);     // вставляем в начало
+    while (m_orderHistory.size() > 20)       // ограничиваем общую длину истории
+        m_orderHistory.removeLast();
+    saveSettings();
+    updateOrderCombo();
+
     QString targetPath = findTargetPath(orderFolderPath, "order");
 
-    // Проверяем, нажат ли Ctrl
     if (QApplication::keyboardModifiers() & Qt::ControlModifier) {
         openInExplorer(targetPath);
         return;
     }
 
-    // Отображаем папку в дереве
     openFolderInView(targetPath);
 }
 
 // Открытие папки чертежей в программе
 void Constructor::openDrawingsFolder()
 {
-    QString orderNumber = m_orderLineEdit->text().trimmed();
+    QString orderNumber = m_orderCombo->currentText().trimmed();
 
     if (orderNumber.isEmpty()) {
         QMessageBox::warning(this, "Ошибка", "Пожалуйста, введите номер заказа!");
@@ -483,24 +495,29 @@ void Constructor::openDrawingsFolder()
         return;
     }
 
-    // Проверяем, нажат ли Ctrl
+    // === Обновление истории ===
+    m_orderHistory.removeAll(orderNumber);
+    m_orderHistory.prepend(orderNumber);
+    while (m_orderHistory.size() > 20)
+        m_orderHistory.removeLast();
+    saveSettings();
+    updateOrderCombo();
+
     if (QApplication::keyboardModifiers() & Qt::ControlModifier) {
         openInExplorer(orderFolderPath);
         return;
     }
 
-    // Отображаем папку в дереве
     openFolderInView(orderFolderPath);
 }
 
 // Открытие папки эскизов в программе
 void Constructor::openSketchesFolder()
 {
-    QString orderNumber = m_orderLineEdit->text().trimmed();
+    QString orderNumber = m_orderCombo->currentText().trimmed();
 
-    if (!validateOrderInput(orderNumber)) {
+    if (!validateOrderInput(orderNumber))
         return;
-    }
 
     QString orderFolderPath = findOrderFolder(orderNumber, m_toFolder);
 
@@ -511,27 +528,31 @@ void Constructor::openSketchesFolder()
         return;
     }
 
-    // Находим целевую папку (Эскизы)
+    // === Обновление истории ===
+    m_orderHistory.removeAll(orderNumber);
+    m_orderHistory.prepend(orderNumber);
+    while (m_orderHistory.size() > 20)
+        m_orderHistory.removeLast();
+    saveSettings();
+    updateOrderCombo();
+
     QString targetPath = findTargetPath(orderFolderPath, "sketch");
 
-    // Проверяем, нажат ли Ctrl
     if (QApplication::keyboardModifiers() & Qt::ControlModifier) {
         openInExplorer(targetPath);
         return;
     }
 
-    // Отображаем папку в дереве
     openFolderInView(targetPath);
 }
 
 // Открытие папки Чертежи в ТО в программе
 void Constructor::openDrawingsInTOFolder()
 {
-    QString orderNumber = m_orderLineEdit->text().trimmed();
+    QString orderNumber = m_orderCombo->currentText().trimmed();
 
-    if (!validateOrderInput(orderNumber)) {
+    if (!validateOrderInput(orderNumber))
         return;
-    }
 
     QString orderFolderPath = findOrderFolder(orderNumber, m_toFolder);
 
@@ -542,16 +563,21 @@ void Constructor::openDrawingsInTOFolder()
         return;
     }
 
-    // Находим целевую папку (Чертежи)
+    // === Обновление истории ===
+    m_orderHistory.removeAll(orderNumber);
+    m_orderHistory.prepend(orderNumber);
+    while (m_orderHistory.size() > 20)
+        m_orderHistory.removeLast();
+    saveSettings();
+    updateOrderCombo();
+
     QString targetPath = findTargetPath(orderFolderPath, "drawingsTO");
 
-    // Проверяем, нажат ли Ctrl
     if (QApplication::keyboardModifiers() & Qt::ControlModifier) {
         openInExplorer(targetPath);
         return;
     }
 
-    // Отображаем папку в дереве
     openFolderInView(targetPath);
 }
 
@@ -1004,6 +1030,13 @@ void Constructor::loadSettings()
     m_advertisingFolder = m_settings.value("advertising_folder", "").toString();
     m_glassFolder = m_settings.value("glass_folder", "").toString();
     m_databaseFolder = m_settings.value("database_folder", "").toString();
+
+    // История заказов
+    m_orderHistory = m_settings.value("order_history").toStringList();
+    // Количество отображаемых элементов (по умолчанию 3)
+    m_maxHistoryDisplay = m_settings.value("history_display_count", 3).toInt();
+    // Ограничение на всякий случай
+    if (m_maxHistoryDisplay < 1) m_maxHistoryDisplay = 3;
 }
 
 void Constructor::saveSettings()
@@ -1013,6 +1046,9 @@ void Constructor::saveSettings()
     m_settings.setValue("advertising_folder", m_advertisingFolder);
     m_settings.setValue("glass_folder", m_glassFolder);
     m_settings.setValue("database_folder", m_databaseFolder);
+
+    m_settings.setValue("order_history", m_orderHistory);
+    m_settings.setValue("history_display_count", m_maxHistoryDisplay);
 }
 
 void Constructor::showSortSettingsDialog()
@@ -1186,3 +1222,40 @@ void Constructor::refreshCurrentView()
     ui->m_toFolderView->setRootIndex(newProxyRoot);
     ui->m_toFolderView->expand(newProxyRoot);           // раскрываем обновлённую папку
 }
+
+void Constructor::showHistorySettingsDialog()
+{
+    bool ok;
+    int newValue = QInputDialog::getInt(
+        this,
+        "Настройка истории",
+        "Количество последних заказов для отображения (1-20):",
+        m_maxHistoryDisplay,
+        1, 20, 1, &ok
+        );
+    qDebug() << "Dialog result ok=" << ok << "newValue=" << newValue;
+    if (ok) {
+        m_maxHistoryDisplay = newValue;
+        saveSettings();
+        qDebug() << "Saved history_display_count:" << m_maxHistoryDisplay;
+        updateOrderCombo();    // обновим выпадающий список сразу
+        statusBar()->showMessage(
+            QString("Будет показано %1 последних заказов").arg(m_maxHistoryDisplay), 3000);
+    } else {
+        qDebug() << "Dialog cancelled, maxHistoryDisplay remains" << m_maxHistoryDisplay;
+    }
+}
+
+void Constructor::updateOrderCombo()
+{
+    if (!m_orderCombo) return;
+    qDebug() << "updateOrderCombo: maxHistoryDisplay=" << m_maxHistoryDisplay
+             << "orderHistory size=" << m_orderHistory.size();
+    m_orderCombo->clear();
+    int count = qMin(m_maxHistoryDisplay, m_orderHistory.size());
+    for (int i = 0; i < count; ++i) {
+        m_orderCombo->addItem(m_orderHistory.at(i));
+    }
+}
+
+

@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <QSettings>
+#include <QComboBox>
 #include <QLineEdit>
 #include <QFileSystemModel>
 #include <QTreeView>
@@ -40,6 +41,7 @@ private slots:
     void openDrawingsInTOFolder();
     void copyToTOFolder();
     void showSortSettingsDialog();
+    void showHistorySettingsDialog();
 
     void onFolderViewDoubleClicked(const QModelIndex &index);
     void onFolderViewClicked(const QModelIndex &index);
@@ -48,6 +50,7 @@ private slots:
     void copyArticul();
 
     void refreshCurrentView();
+    void updateOrderCombo();
 
 private:
     void loadSettings();
@@ -71,8 +74,12 @@ private:
     QString m_glassFolder;
     QString m_databaseFolder;
 
-    QLineEdit *m_orderLineEdit;
+    QComboBox *m_orderCombo;
     QLineEdit *m_productLineEdit;
+
+    // История заказов и настройка
+    QStringList m_orderHistory;         // полная история (сохраняется)
+    int m_maxHistoryDisplay = 3;           // сколько показывать в комбобоксе (по умолч. 3)
 };
 
 #endif // CONSTRUCTOR_H
