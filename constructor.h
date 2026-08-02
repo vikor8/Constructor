@@ -48,9 +48,11 @@ private slots:
 
     void copyFileName();
     void copyArticul();
+    void openPZFolder();
 
     void refreshCurrentView();
     void updateOrderCombo();
+
 
 private:
     void loadSettings();

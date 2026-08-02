@@ -109,10 +109,10 @@ Constructor::Constructor(QWidget *parent)
     connect(actionSketch, &QAction::triggered, this, &Constructor::openSketchesFolder);
     connect(actionDrawTO, &QAction::triggered, this, &Constructor::openDrawingsInTOFolder);
     connect(actionDraw, &QAction::triggered, this, &Constructor::openDrawingsFolder);
-
-    connect(actionCompare, &QAction::triggered, [this]() {
-        QMessageBox::information(this, "Информация", "Функция в разработке");
-    });
+    connect(actionCompare, &QAction::triggered, this, &Constructor::openPZFolder);
+    // connect(actionCompare, &QAction::triggered, [this]() {
+    //     QMessageBox::information(this, "Информация", "Функция в разработке");
+    // });
 
     // Создаем второй тулбар
     QToolBar *tbar2 = new QToolBar("Панель изделий", this);
@@ -285,6 +285,16 @@ QString Constructor::findTargetPath(const QString &orderFolderPath, const QStrin
                                                                QDir::Dirs | QDir::NoDotAndDotDot);
         if (!drawingsFolders.isEmpty()) {
             return orderDir.filePath(drawingsFolders.first());
+        }
+        return orderFolderPath;
+    }
+    else if (buttonType == "pz") {
+        // Для кнопки "ПЗ" — папка "План закладных"
+        const QStringList pzFolders = orderDir.entryList(
+            QStringList() << "План закладных" << "План закладных*" << "ПЗ" << "Plan zakladnyh",
+            QDir::Dirs | QDir::NoDotAndDotDot);
+        if (!pzFolders.isEmpty()) {
+            return orderDir.filePath(pzFolders.first());
         }
         return orderFolderPath;
     }
@@ -1267,4 +1277,36 @@ void Constructor::updateOrderCombo()
     }
 }
 
+void Constructor::openPZFolder()
+{
+    QString orderNumber = m_orderCombo->currentText().trimmed();
 
+    if (!validateOrderInput(orderNumber))
+        return;
+
+    QString orderFolderPath = findOrderFolder(orderNumber, m_toFolder);
+
+    if (orderFolderPath.isEmpty()) {
+        QMessageBox::information(this, "Не найдено",
+                                 QString("Папка с заказом №%1 не найдена в:\n%2")
+                                     .arg(orderNumber, m_toFolder));
+        return;
+    }
+
+    // Обновление истории (как у других кнопок)
+    m_orderHistory.removeAll(orderNumber);
+    m_orderHistory.prepend(orderNumber);
+    while (m_orderHistory.size() > 20)
+        m_orderHistory.removeLast();
+    saveSettings();
+    updateOrderCombo();
+
+    QString targetPath = findTargetPath(orderFolderPath, "pz");
+
+    if (QApplication::keyboardModifiers() & Qt::ControlModifier) {
+        openInExplorer(targetPath);
+        return;
+    }
+
+    openFolderInView(targetPath);
+}
