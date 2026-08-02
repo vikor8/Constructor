@@ -102,7 +102,7 @@ Constructor::Constructor(QWidget *parent)
     QAction *actionSketch = tbar->addAction("Эскизы");
     QAction *actionDrawTO = tbar->addAction("Чертежи в ТО");
     QAction *actionDraw = tbar->addAction("Чертежи");
-    QAction *actionCompare = tbar->addAction("Сравнить с ТО");
+    QAction *actionCompare = tbar->addAction("ПЗ");
 
     // Подключаем кнопки
     connect(actionOrder, &QAction::triggered, this, &Constructor::openOrderFolder);
@@ -164,9 +164,9 @@ Constructor::~Constructor()
 // Настройка модели файловой системы
 void Constructor::setupFileSystemModel()
 {
-    // Включаем Drag & Drop (только копирование наружу)
+    // Включаем Drag & Drop
     ui->m_toFolderView->setDragEnabled(true);
-    ui->m_toFolderView->setAcceptDrops(false);           // не принимаем файлы извне
+    ui->m_toFolderView->setAcceptDrops(true);           // не принимаем файлы извне
     ui->m_toFolderView->setDropIndicatorShown(false);
     ui->m_toFolderView->setDragDropMode(QAbstractItemView::DragOnly);
 
@@ -197,14 +197,24 @@ void Constructor::setupFileSystemModel()
     ui->m_toFolderView->setHeaderHidden(false);
     ui->m_toFolderView->header()->setSortIndicatorShown(true);
 
+    // Скрываем столбцы Size (1) и Type (2)
+    ui->m_toFolderView->hideColumn(1);
+    ui->m_toFolderView->hideColumn(2);
+
     // НАСТРОЙКА КОЛОНОК - Size и Date Modified поменяны местами
+
+    // ui->m_toFolderView->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    // ui->m_toFolderView->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    // ui->m_toFolderView->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
     ui->m_toFolderView->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-    ui->m_toFolderView->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    ui->m_toFolderView->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    ui->m_toFolderView->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    ui->m_toFolderView->header()->setSectionResizeMode(3, QHeaderView::Fixed);   // запрет изменения
+    ui->m_toFolderView->header()->resizeSection(3, 120);                         // точный размер
+    // Запрещаем растягивание последней секции
+    ui->m_toFolderView->header()->setStretchLastSection(false);
+
 
     // Меняем местами колонки Size и Date Modified
-    ui->m_toFolderView->header()->swapSections(1, 3);
+    // ui->m_toFolderView->header()->swapSections(1, 3);
 
     // Устанавливаем сортировку по умолчанию
     ui->m_toFolderView->sortByColumn(0, Qt::AscendingOrder);
@@ -282,7 +292,6 @@ QString Constructor::findTargetPath(const QString &orderFolderPath, const QStrin
     return orderFolderPath;
 }
 
-// Открытие папки в представлении
 // Открытие папки в представлении
 void Constructor::openFolderInView(const QString &path)
 {
@@ -725,7 +734,7 @@ void Constructor::copyToTOFolder()
                                               QMessageBox::StandardButton reply = QMessageBox::question(
                                                   this,
                                                   "Папка уже существует",
-                                                  QString("Папка уже существует:\n%1\n\nЧто сделать?")
+                                                  QString("Папка уже существует:\n%1\n\nЗаменить?")
                                                       .arg(targetItemFolder),
                                                   QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel
                                                   );
