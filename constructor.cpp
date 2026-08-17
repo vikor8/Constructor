@@ -140,6 +140,7 @@ Constructor::Constructor(QWidget *parent)
     connect(actionDrawTO, &QAction::triggered, this, &Constructor::openDrawingsInTOFolder);
     connect(actionDraw, &QAction::triggered, this, &Constructor::openDrawingsFolder);
     connect(actionCompare, &QAction::triggered, this, &Constructor::openPZFolder);
+    tbar->setFixedWidth(70); //ширина тулбара
 
     // ================== ВТОРОЙ ТУЛБАР (без счётчика) ==================
     QToolBar *tbar2 = new QToolBar("Панель изделий", this);
@@ -165,6 +166,7 @@ Constructor::Constructor(QWidget *parent)
     connect(actionTOMove, &QAction::triggered, this, &Constructor::copyToTOFolder);
     connect(actionCopyName, &QAction::triggered, this, &Constructor::copyFileName);
     connect(actionCopyArticul, &QAction::triggered, this, &Constructor::copyArticul);
+    tbar2->setFixedWidth(70); //ширина тулбара
 
     // ================== ТРЕТИЙ ТУЛБАР: СЧЕТЧИК ВРЕМЕНИ ==================
     QToolBar *tbar3 = new QToolBar("Счетчик времени", this);
@@ -190,6 +192,7 @@ Constructor::Constructor(QWidget *parent)
     m_modeBtn = new ModeButton(tbar3);
     m_modeBtn->setMaximumWidth(70);
     tbar3->addWidget(m_modeBtn);
+    tbar3->setFixedWidth(70); //ширина тулбара
 
     // ======================= ИНИЦИАЛИЗАЦИЯ ТАЙМЕРА И БД =======================
     m_timerRunning = false;
@@ -281,8 +284,8 @@ void Constructor::setupFileSystemModel()
 
     // Настройка режимов растяжения
     ui->m_toFolderView->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-    ui->m_toFolderView->header()->setSectionResizeMode(3, QHeaderView::Fixed);
-    ui->m_toFolderView->header()->resizeSection(3, 50);   // ширина колонки Date Modified
+    ui->m_toFolderView->header()->setSectionResizeMode(3, QHeaderView::QHeaderView::ResizeToContents);
+    ui->m_toFolderView->header()->setStretchLastSection(false);   // ширина колонки Date Modified
 
     // Запрещаем растягивание последней секции
     ui->m_toFolderView->header()->setStretchLastSection(false);
