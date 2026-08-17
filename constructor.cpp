@@ -33,6 +33,14 @@ Constructor::Constructor(QWidget *parent)
     , m_orderCombo(nullptr)
     , m_productLineEdit(nullptr)
     , m_maxHistoryDisplay(3)
+    , m_timerRunning(false)
+    , m_isSketchMode(true)
+    , m_timeLabel(nullptr)
+    , m_playStopBtn(nullptr)
+    , m_modeBtn(nullptr)
+    , m_toolbar1(nullptr)
+    , m_toolbar2(nullptr)
+    , m_statsContainer(nullptr)
 {
     ui->setupUi(this);
 
@@ -44,7 +52,7 @@ Constructor::Constructor(QWidget *parent)
     // Настраиваем модель файловой системы
     setupFileSystemModel();
 
-    // Загружаем сохраненные настройки
+    // Загружаем сохранённые настройки
     loadSettings();
 
     // Устанавливаем начальную папку, если она есть
@@ -52,10 +60,10 @@ Constructor::Constructor(QWidget *parent)
         openFolderInView(m_toFolder);
     }
 
-    // Создаем менюбар
+    // ======================= МЕНЮ =======================
     QMenuBar *menuBar = new QMenuBar(this);
 
-    // Создаем меню "Файл"
+    // ----- Меню "Файл" -----
     QMenu *fileMenu = menuBar->addMenu("Файл");
     QAction *toFolderAction = fileMenu->addAction("Папка ТО");
     QAction *drawingsFolderAction = fileMenu->addAction("Папка Чертежи");
@@ -68,7 +76,7 @@ Constructor::Constructor(QWidget *parent)
     fileMenu->addSeparator();
     QAction *exitAction = fileMenu->addAction("Выход");
 
-    // Подключаем сигналы к слотам
+    // Подключаем сигналы файлового меню
     connect(toFolderAction, &QAction::triggered, this, &Constructor::selectTOFolder);
     connect(drawingsFolderAction, &QAction::triggered, this, &Constructor::selectDrawingsFolder);
     connect(advertisingFolderAction, &QAction::triggered, this, &Constructor::selectAdvertisingFolder);
@@ -78,81 +86,112 @@ Constructor::Constructor(QWidget *parent)
     connect(historySettingsAction, &QAction::triggered, this, &Constructor::showHistorySettingsDialog);
     connect(exitAction, &QAction::triggered, this, &Constructor::exitApplication);
 
-    // Устанавливаем менюбар для главного окна
+    // ----- Меню "Вид" -----
+    QMenu *viewMenu = menuBar->addMenu("Вид");
+
+    // Счётчик времени
+    QAction *toggleStatsAction = viewMenu->addAction("Счетчик времени");
+    toggleStatsAction->setCheckable(true);
+    toggleStatsAction->setChecked(true);
+    connect(toggleStatsAction, &QAction::toggled,
+            this, &Constructor::toggleStatsVisibility);
+
+    // Панель заказов
+    QAction *toggleToolbar1Action = viewMenu->addAction("Панель заказов");
+    toggleToolbar1Action->setCheckable(true);
+    toggleToolbar1Action->setChecked(true);
+    connect(toggleToolbar1Action, &QAction::toggled,
+            this, &Constructor::toggleToolbar1Visibility);
+
+    // Панель изделий
+    QAction *toggleToolbar2Action = viewMenu->addAction("Панель изделий");
+    toggleToolbar2Action->setCheckable(true);
+    toggleToolbar2Action->setChecked(true);
+    connect(toggleToolbar2Action, &QAction::toggled,
+            this, &Constructor::toggleToolbar2Visibility);
+
+    // Устанавливаем менюбар
     setMenuBar(menuBar);
 
-    // Создаем первый тулбар
+    // ======================= ТУЛБАР 1: ЗАКАЗЫ =======================
     QToolBar *tbar = new QToolBar("Панель заказов", this);
+    m_toolbar1 = tbar;
     tbar->setAllowedAreas(Qt::LeftToolBarArea);
     tbar->setOrientation(Qt::Vertical);
     addToolBar(Qt::LeftToolBarArea, tbar);
 
-
-
-    // Создаём комбобокс с возможностью редактирования
+    // Комбобокс для номера заказа
     m_orderCombo = new QComboBox(tbar);
     m_orderCombo->setEditable(true);
     m_orderCombo->setMaximumWidth(70);
     m_orderCombo->lineEdit()->setPlaceholderText("Заказ");
-    // Загружаем последние maxHistoryDisplay элементов
-    updateOrderCombo();   // реализуем отдельным методом
+    updateOrderCombo();
     tbar->addWidget(m_orderCombo);
 
-    // Добавляем кнопки
+    // Кнопки первого тулбара
     QAction *actionOrder = tbar->addAction("Заказ");
     QAction *actionSketch = tbar->addAction("Эскизы");
     QAction *actionDrawTO = tbar->addAction("Чертежи в ТО");
     QAction *actionDraw = tbar->addAction("Чертежи");
     QAction *actionCompare = tbar->addAction("ПЗ");
 
-    // Подключаем кнопки
     connect(actionOrder, &QAction::triggered, this, &Constructor::openOrderFolder);
     connect(actionSketch, &QAction::triggered, this, &Constructor::openSketchesFolder);
     connect(actionDrawTO, &QAction::triggered, this, &Constructor::openDrawingsInTOFolder);
     connect(actionDraw, &QAction::triggered, this, &Constructor::openDrawingsFolder);
     connect(actionCompare, &QAction::triggered, this, &Constructor::openPZFolder);
-    // connect(actionCompare, &QAction::triggered, [this]() {
-    //     QMessageBox::information(this, "Информация", "Функция в разработке");
-    // });
 
-    // Создаем второй тулбар
+    // ================== ВТОРОЙ ТУЛБАР (без счётчика) ==================
     QToolBar *tbar2 = new QToolBar("Панель изделий", this);
+    m_toolbar2 = tbar2;
     tbar2->setAllowedAreas(Qt::LeftToolBarArea);
     tbar2->setOrientation(Qt::Vertical);
     addToolBar(Qt::LeftToolBarArea, tbar2);
 
-    // Создаем и добавляем QLineEdit
+    // Поле ввода номера изделия
     m_productLineEdit = new QLineEdit(tbar2);
     m_productLineEdit->setPlaceholderText("№ Изделия");
-    m_productLineEdit->setMaximumWidth(70);    
+    m_productLineEdit->setMaximumWidth(70);
     tbar2->addWidget(m_productLineEdit);
 
-    // Добавляем кнопки
-    // QAction *actionProduction = tbar2->addAction("Изделие");
-    // QAction *actionTO = tbar2->addAction("ТО");
-    // Добавляем Label для времени
-    m_timeLabel = new QLabel("00:00", tbar2);
-    m_timeLabel->setAlignment(Qt::AlignCenter);
-    m_timeLabel->setStyleSheet("font-size: 16px; font-weight: bold; color: white; background-color: #333; border-radius: 4px; padding: 4px;");
-    m_timeLabel->setMaximumWidth(70);
-    tbar2->addWidget(m_timeLabel);
-
-    // Кнопка Пуск/Стоп
-    m_playStopBtn = new FlipButton(tbar2);
-    m_playStopBtn->setMaximumWidth(70);
-    m_playStopBtn->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-    tbar2->addWidget(m_playStopBtn);
-
-    // Кнопка Эскиз/Чертежи
-    m_modeBtn = new ModeButton(tbar2);
-    m_modeBtn->setMaximumWidth(70);
-    tbar2->addWidget(m_modeBtn);
-     tbar2->addSeparator();
+    // Разделитель и кнопки второго тулбара (без счётчика)
+    tbar2->addSeparator();
     QAction *actionTOMove = tbar2->addAction("->ТО");
-     tbar2->addSeparator();
+    tbar2->addSeparator();
     QAction *actionCopyName = tbar2->addAction("Имя");
     QAction *actionCopyArticul = tbar2->addAction("Артикул");
 
+    // Подключение сигналов второго тулбара
+    connect(actionTOMove, &QAction::triggered, this, &Constructor::copyToTOFolder);
+    connect(actionCopyName, &QAction::triggered, this, &Constructor::copyFileName);
+    connect(actionCopyArticul, &QAction::triggered, this, &Constructor::copyArticul);
+
+    // ================== ТРЕТИЙ ТУЛБАР: СЧЕТЧИК ВРЕМЕНИ ==================
+    QToolBar *tbar3 = new QToolBar("Счетчик времени", this);
+    m_toolbar3 = tbar3;
+    tbar3->setAllowedAreas(Qt::LeftToolBarArea);
+    tbar3->setOrientation(Qt::Vertical);
+    addToolBar(Qt::LeftToolBarArea, tbar3);
+
+    // Label времени
+    m_timeLabel = new QLabel("00:00", tbar3);
+    m_timeLabel->setAlignment(Qt::AlignCenter);
+    m_timeLabel->setStyleSheet("font-size: 16px; font-weight: bold; color: white; background-color: #333; border-radius: 4px; padding: 4px;");
+    m_timeLabel->setMaximumWidth(70);
+    tbar3->addWidget(m_timeLabel);
+
+    // Кнопка Пуск/Стоп
+    m_playStopBtn = new FlipButton(tbar3);
+    m_playStopBtn->setMaximumWidth(70);
+    m_playStopBtn->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    tbar3->addWidget(m_playStopBtn);
+
+    // Кнопка Эскиз/Чертежи
+    m_modeBtn = new ModeButton(tbar3);
+    m_modeBtn->setMaximumWidth(70);
+    tbar3->addWidget(m_modeBtn);
+
+    // ======================= ИНИЦИАЛИЗАЦИЯ ТАЙМЕРА И БД =======================
     m_timerRunning = false;
     m_isSketchMode = true;
     m_statsDb = new StatsDatabase(this);
@@ -164,31 +203,34 @@ Constructor::Constructor(QWidget *parent)
     m_displayTimer = new QTimer(this);
     connect(m_displayTimer, &QTimer::timeout, this, &Constructor::updateTimerLabel);
 
-    // Подключаем кнопки
-   connect(m_playStopBtn, &FlipButton::toggled, this, &Constructor::onPlayStopToggled);
-
+    // Подключаем сигналы кнопок статистики
+    connect(m_playStopBtn, &FlipButton::toggled, this, &Constructor::onPlayStopToggled);
     connect(m_modeBtn, &ModeButton::modeChanged, this, &Constructor::onModeChanged);
 
-    connect(actionCopyName, &QAction::triggered, this, &Constructor::copyFileName);
-    connect(actionCopyArticul, &QAction::triggered, this, &Constructor::copyArticul);
+    // Подключаем изменение номера изделия
+    connect(m_productLineEdit, &QLineEdit::textChanged,
+            this, &Constructor::onProductLineEditChanged);
 
-    // Подключаем кнопки второго тулбара
-    // connect(actionProduction, &QAction::triggered, [this]() {
-    //     QMessageBox::information(this, "Информация", "Функция в разработке");
-    // });
-    // connect(actionTO, &QAction::triggered, [this]() {
-    //     QMessageBox::information(this, "Информация", "Функция в разработке");
-    // });
-    connect(actionTOMove, &QAction::triggered, this, &Constructor::copyToTOFolder);
-    connect(actionCopyName, &QAction::triggered, this, &Constructor::copyFileName);
-    connect(actionCopyArticul, &QAction::triggered, this, &Constructor::copyArticul);
-    connect(m_productLineEdit, &QLineEdit::textChanged, this, &Constructor::onProductLineEditChanged);
-
-    // Устанавливаем заголовок окна
+    // ======================= ЗАГОЛОВОК И СТАТУСБАР =======================
     setWindowTitle("Constructor - Управление заказами");
-
-    // Добавляем подсказку в статусбар
     statusBar()->showMessage("Ctrl+Клик - открыть в проводнике | Клик по заголовку - сортировка | Двойной клик - открыть файл");
+}
+
+void Constructor::toggleStatsVisibility(bool visible)
+{
+    if (m_toolbar3) {
+        m_toolbar3->setVisible(visible);
+    }
+}
+
+void Constructor::toggleToolbar1Visibility(bool visible)
+{
+    if (m_toolbar1) m_toolbar1->setVisible(visible);
+}
+
+void Constructor::toggleToolbar2Visibility(bool visible)
+{
+    if (m_toolbar2) m_toolbar2->setVisible(visible);
 }
 
 Constructor::~Constructor()
@@ -200,9 +242,9 @@ Constructor::~Constructor()
 // Настройка модели файловой системы
 void Constructor::setupFileSystemModel()
 {
-    // Включаем Drag & Drop
+    // Включаем Drag & Drop (только копирование наружу)
     ui->m_toFolderView->setDragEnabled(true);
-    ui->m_toFolderView->setAcceptDrops(true);           // не принимаем файлы извне
+    ui->m_toFolderView->setAcceptDrops(false);           // не принимаем файлы извне
     ui->m_toFolderView->setDropIndicatorShown(false);
     ui->m_toFolderView->setDragDropMode(QAbstractItemView::DragOnly);
 
@@ -229,7 +271,7 @@ void Constructor::setupFileSystemModel()
     QModelIndex proxyRoot = m_proxyModel->mapFromSource(sourceRoot);
     ui->m_toFolderView->setRootIndex(proxyRoot);
 
-    // ПОКАЗЫВАЕМ ЗАГОЛОВКИ КОЛОНОК
+    // Показываем заголовки колонок
     ui->m_toFolderView->setHeaderHidden(false);
     ui->m_toFolderView->header()->setSortIndicatorShown(true);
 
@@ -237,20 +279,13 @@ void Constructor::setupFileSystemModel()
     ui->m_toFolderView->hideColumn(1);
     ui->m_toFolderView->hideColumn(2);
 
-    // НАСТРОЙКА КОЛОНОК - Size и Date Modified поменяны местами
-
-    // ui->m_toFolderView->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    // ui->m_toFolderView->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    // ui->m_toFolderView->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    // Настройка режимов растяжения
     ui->m_toFolderView->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-    ui->m_toFolderView->header()->setSectionResizeMode(3, QHeaderView::Fixed);   // запрет изменения
-    ui->m_toFolderView->header()->resizeSection(3, 120);                         // точный размер
+    ui->m_toFolderView->header()->setSectionResizeMode(3, QHeaderView::Fixed);
+    ui->m_toFolderView->header()->resizeSection(3, 50);   // ширина колонки Date Modified
+
     // Запрещаем растягивание последней секции
     ui->m_toFolderView->header()->setStretchLastSection(false);
-
-
-    // Меняем местами колонки Size и Date Modified
-    // ui->m_toFolderView->header()->swapSections(1, 3);
 
     // Устанавливаем сортировку по умолчанию
     ui->m_toFolderView->sortByColumn(0, Qt::AscendingOrder);
@@ -261,7 +296,6 @@ void Constructor::setupFileSystemModel()
     connect(ui->m_toFolderView, &QTreeView::clicked,
             this, &Constructor::onFolderViewClicked);
 }
-
 // Поиск целевой папки в зависимости от типа кнопки
 QString Constructor::findTargetPath(const QString &orderFolderPath, const QString &buttonType)
 {

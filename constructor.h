@@ -60,6 +60,9 @@ private slots:
     void onModeChanged(bool sketch);
     void updateTimerLabel();
     void onProductLineEditChanged(const QString &text);
+    void toggleStatsVisibility(bool visible);
+    void toggleToolbar1Visibility(bool visible);
+    void toggleToolbar2Visibility(bool visible);
 
 private:
     void loadSettings();
@@ -100,6 +103,23 @@ private:
     QString m_currentItem;
     int m_sketchAccumulatedSec = 0;   // накопленное время эскиза (сек)
     int m_drawingAccumulatedSec = 0;  // накопленное время чертежей (сек)
+    // Указатели на кнопки первого тулбара
+    QAction *m_actionOrder = nullptr;
+    QAction *m_actionSketch = nullptr;
+    QAction *m_actionDrawTO = nullptr;
+    QAction *m_actionDraw = nullptr;
+    QAction *m_actionPZ = nullptr;
+
+    // Указатели на кнопки второго тулбара
+    QAction *m_actionTOMove = nullptr;
+    QAction *m_actionCopyName = nullptr;
+    QAction *m_actionCopyArticul = nullptr;
+
+
+    QToolBar *m_toolbar1 = nullptr;
+    QToolBar *m_toolbar2 = nullptr;
+    QToolBar *m_toolbar3 = nullptr;
+    QWidget *m_statsContainer = nullptr;
 };
 
 #endif // CONSTRUCTOR_H
