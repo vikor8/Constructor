@@ -7,7 +7,6 @@
 #include <QLineEdit>
 #include <QFileSystemModel>
 #include <QTreeView>
-#include "sortfilterproxymodel.h"
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QListWidget>
@@ -15,6 +14,14 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QGroupBox>
+#include <QTimer>
+#include <QElapsedTimer>
+#include <QLabel>
+
+#include "sortfilterproxymodel.h"
+#include "statsdatabase.h"
+#include "flipbutton.h"
+#include "modebutton.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class Constructor; }
@@ -42,17 +49,17 @@ private slots:
     void copyToTOFolder();
     void showSortSettingsDialog();
     void showHistorySettingsDialog();
-
     void onFolderViewDoubleClicked(const QModelIndex &index);
     void onFolderViewClicked(const QModelIndex &index);
-
     void copyFileName();
     void copyArticul();
     void openPZFolder();
-
     void refreshCurrentView();
     void updateOrderCombo();
-
+    void onPlayStopToggled(bool playIconShown);
+    void onModeChanged(bool sketch);
+    void updateTimerLabel();
+    void onProductLineEditChanged(const QString &text);
 
 private:
     void loadSettings();
@@ -66,7 +73,6 @@ private:
 
     Ui::Constructor *ui;
     QSettings m_settings;
-
     QFileSystemModel *m_fileSystemModel;
     CustomSortProxyModel *m_proxyModel;
 
@@ -79,9 +85,21 @@ private:
     QComboBox *m_orderCombo;
     QLineEdit *m_productLineEdit;
 
-    // История заказов и настройка
-    QStringList m_orderHistory;         // полная история (сохраняется)
-    int m_maxHistoryDisplay = 3;           // сколько показывать в комбобоксе (по умолч. 3)
+    QStringList m_orderHistory;
+    int m_maxHistoryDisplay = 3;
+
+    // Статистика и таймер
+    StatsDatabase *m_statsDb;
+    QTimer *m_displayTimer;
+    QElapsedTimer m_elapsed;
+    bool m_timerRunning = false;
+    bool m_isSketchMode = true;
+    QLabel *m_timeLabel = nullptr;
+    FlipButton *m_playStopBtn = nullptr;
+    ModeButton *m_modeBtn = nullptr;
+    QString m_currentItem;
+    int m_sketchAccumulatedSec = 0;   // накопленное время эскиза (сек)
+    int m_drawingAccumulatedSec = 0;  // накопленное время чертежей (сек)
 };
 
 #endif // CONSTRUCTOR_H

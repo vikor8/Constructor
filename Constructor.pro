@@ -1,4 +1,4 @@
-QT += widgets
+QT += core gui widgets sql
 
 CONFIG += c++17
 
@@ -7,13 +7,19 @@ CONFIG += c++17
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
+    flipbutton.cpp \
     main.cpp \
     constructor.cpp \
-    sortfilterproxymodel.cpp
+    modebutton.cpp \
+    sortfilterproxymodel.cpp \
+    statsdatabase.cpp
 
 HEADERS += \
     constructor.h \
-    sortfilterproxymodel.h
+    flipbutton.h \
+    modebutton.h \
+    sortfilterproxymodel.h \
+    statsdatabase.h
 
 FORMS += \
     constructor.ui

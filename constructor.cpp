@@ -24,6 +24,7 @@
 #include <QClipboard>
 #include <QRegularExpression>
 
+
 Constructor::Constructor(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::Constructor)
@@ -123,30 +124,65 @@ Constructor::Constructor(QWidget *parent)
     // Создаем и добавляем QLineEdit
     m_productLineEdit = new QLineEdit(tbar2);
     m_productLineEdit->setPlaceholderText("№ Изделия");
-    m_productLineEdit->setMaximumWidth(70);
+    m_productLineEdit->setMaximumWidth(70);    
     tbar2->addWidget(m_productLineEdit);
 
     // Добавляем кнопки
-    QAction *actionProduction = tbar2->addAction("Изделие");
-    QAction *actionTO = tbar2->addAction("ТО");
+    // QAction *actionProduction = tbar2->addAction("Изделие");
+    // QAction *actionTO = tbar2->addAction("ТО");
+    // Добавляем Label для времени
+    m_timeLabel = new QLabel("00:00", tbar2);
+    m_timeLabel->setAlignment(Qt::AlignCenter);
+    m_timeLabel->setStyleSheet("font-size: 16px; font-weight: bold; color: white; background-color: #333; border-radius: 4px; padding: 4px;");
+    m_timeLabel->setMaximumWidth(70);
+    tbar2->addWidget(m_timeLabel);
+
+    // Кнопка Пуск/Стоп
+    m_playStopBtn = new FlipButton(tbar2);
+    m_playStopBtn->setMaximumWidth(70);
+    m_playStopBtn->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    tbar2->addWidget(m_playStopBtn);
+
+    // Кнопка Эскиз/Чертежи
+    m_modeBtn = new ModeButton(tbar2);
+    m_modeBtn->setMaximumWidth(70);
+    tbar2->addWidget(m_modeBtn);
+     tbar2->addSeparator();
     QAction *actionTOMove = tbar2->addAction("->ТО");
      tbar2->addSeparator();
     QAction *actionCopyName = tbar2->addAction("Имя");
     QAction *actionCopyArticul = tbar2->addAction("Артикул");
 
+    m_timerRunning = false;
+    m_isSketchMode = true;
+    m_statsDb = new StatsDatabase(this);
+    QString dbPath = QCoreApplication::applicationDirPath() + "/workstats.db";
+    if (!m_statsDb->init(dbPath)) {
+        QMessageBox::critical(this, "Ошибка БД", "Не удалось открыть базу статистики.");
+    }
+
+    m_displayTimer = new QTimer(this);
+    connect(m_displayTimer, &QTimer::timeout, this, &Constructor::updateTimerLabel);
+
+    // Подключаем кнопки
+   connect(m_playStopBtn, &FlipButton::toggled, this, &Constructor::onPlayStopToggled);
+
+    connect(m_modeBtn, &ModeButton::modeChanged, this, &Constructor::onModeChanged);
+
     connect(actionCopyName, &QAction::triggered, this, &Constructor::copyFileName);
     connect(actionCopyArticul, &QAction::triggered, this, &Constructor::copyArticul);
 
     // Подключаем кнопки второго тулбара
-    connect(actionProduction, &QAction::triggered, [this]() {
-        QMessageBox::information(this, "Информация", "Функция в разработке");
-    });
-    connect(actionTO, &QAction::triggered, [this]() {
-        QMessageBox::information(this, "Информация", "Функция в разработке");
-    });
+    // connect(actionProduction, &QAction::triggered, [this]() {
+    //     QMessageBox::information(this, "Информация", "Функция в разработке");
+    // });
+    // connect(actionTO, &QAction::triggered, [this]() {
+    //     QMessageBox::information(this, "Информация", "Функция в разработке");
+    // });
     connect(actionTOMove, &QAction::triggered, this, &Constructor::copyToTOFolder);
     connect(actionCopyName, &QAction::triggered, this, &Constructor::copyFileName);
     connect(actionCopyArticul, &QAction::triggered, this, &Constructor::copyArticul);
+    connect(m_productLineEdit, &QLineEdit::textChanged, this, &Constructor::onProductLineEditChanged);
 
     // Устанавливаем заголовок окна
     setWindowTitle("Constructor - Управление заказами");
@@ -1309,4 +1345,155 @@ void Constructor::openPZFolder()
     }
 
     openFolderInView(targetPath);
+}
+
+void Constructor::onModeChanged(bool sketch)
+{
+    if (m_timerRunning) {
+        // Останавливаем текущий режим
+        int elapsedSec = m_elapsed.elapsed() / 1000;
+        m_displayTimer->stop();
+        m_timerRunning = false;
+
+        if (m_isSketchMode) {
+            m_sketchAccumulatedSec += elapsedSec;
+        } else {
+            m_drawingAccumulatedSec += elapsedSec;
+        }
+        m_statsDb->stopSession(m_currentItem, m_isSketchMode, elapsedSec);
+
+        // Переключаем режим
+        m_isSketchMode = sketch;
+
+        // Запускаем новый режим
+        m_elapsed.start();
+        m_displayTimer->start(200);
+        m_timerRunning = true;
+        m_statsDb->startSession(m_currentItem, m_isSketchMode);
+    } else {
+        // Просто меняем режим (таймер не идёт)
+        m_isSketchMode = sketch;
+    }
+
+    // Обновляем дисплей (покажет накопленное время нового режима)
+    updateTimerLabel();
+    statusBar()->showMessage(QString("Режим переключён на %1").arg(m_isSketchMode ? "Эскиз" : "Чертежи"));
+}
+
+void Constructor::updateTimerLabel()
+{
+    int totalSec = m_isSketchMode ? m_sketchAccumulatedSec : m_drawingAccumulatedSec;
+    if (m_timerRunning) {
+        totalSec += m_elapsed.elapsed() / 1000;
+    }
+
+    int mins = totalSec / 60;
+    int secs = totalSec % 60;
+    QString modeChar = m_isSketchMode ? "Э" : "Ч";
+    m_timeLabel->setText(QString("%1:%2 %3")
+                             .arg(mins, 2, 10, QChar('0'))
+                             .arg(secs, 2, 10, QChar('0'))
+                             .arg(modeChar));
+}
+
+void Constructor::onPlayStopToggled(bool playIconShown)
+{
+    QString item = m_productLineEdit->text().trimmed();
+    if (item.isEmpty()) {
+        QMessageBox::warning(this, "Ошибка", "Введите номер изделия!");
+        return;
+    }
+    m_currentItem = item;
+
+    // playIconShown == false → видна иконка "Стоп" → таймер должен работать
+    if (!playIconShown) {
+        if (m_timerRunning) return;
+        m_elapsed.start();
+        m_displayTimer->start(200);
+        m_timerRunning = true;
+        m_statsDb->startSession(m_currentItem, m_isSketchMode);
+        statusBar()->showMessage(QString("Запущен %1 для %2")
+                                     .arg(m_isSketchMode ? "эскиз" : "чертежи", m_currentItem));
+        updateTimerLabel();   // сразу обновим дисплей с учётом накопленного
+    }
+    // playIconShown == true → иконка "Пуск" → таймер остановлен
+    else {
+        if (!m_timerRunning) return;
+        int elapsedSec = m_elapsed.elapsed() / 1000;
+        m_displayTimer->stop();
+        m_timerRunning = false;
+
+        // Добавляем интервал к накопленному времени соответствующего режима
+        if (m_isSketchMode) {
+            m_sketchAccumulatedSec += elapsedSec;
+        } else {
+            m_drawingAccumulatedSec += elapsedSec;
+        }
+
+        // Сохраняем интервал в БД
+        m_statsDb->stopSession(m_currentItem, m_isSketchMode, elapsedSec);
+
+        // Показываем общее время после остановки
+        int totalSec = m_isSketchMode ? m_sketchAccumulatedSec : m_drawingAccumulatedSec;
+        updateTimerLabel();  // обновит label, используя накопленное значение
+
+        statusBar()->showMessage(QString("Остановлен %1, всего %2 сек.")
+                                     .arg(m_isSketchMode ? "эскиз" : "чертежи").arg(totalSec));
+    }
+}
+
+void Constructor::onProductLineEditChanged(const QString &text)
+{
+    // 1. Обработка случая, когда пользователь полностью стёр номер изделия
+    if (text.trimmed().isEmpty()) {
+        if (m_timerRunning) {
+            // Останавливаем таймер и сохраняем интервал для предыдущего изделия
+            int elapsedSec = m_elapsed.elapsed() / 1000;
+            m_displayTimer->stop();
+            m_timerRunning = false;
+
+            if (!m_currentItem.isEmpty()) {
+                if (m_isSketchMode)
+                    m_sketchAccumulatedSec += elapsedSec;
+                else
+                    m_drawingAccumulatedSec += elapsedSec;
+
+                m_statsDb->stopSession(m_currentItem, m_isSketchMode, elapsedSec);
+            }
+        }
+
+        // Очищаем текущее изделие и накопленное время
+        m_currentItem.clear();
+        m_sketchAccumulatedSec = 0;
+        m_drawingAccumulatedSec = 0;
+        updateTimerLabel();
+        return;
+    }
+
+    // 2. Обычная смена изделия (текст не пустой)
+    QString newItem = text.trimmed();
+
+    // Если таймер работает, останавливаем и сохраняем интервал
+    if (m_timerRunning) {
+        int elapsedSec = m_elapsed.elapsed() / 1000;
+        m_displayTimer->stop();
+        m_timerRunning = false;
+
+        if (m_isSketchMode)
+            m_sketchAccumulatedSec += elapsedSec;
+        else
+            m_drawingAccumulatedSec += elapsedSec;
+
+        m_statsDb->stopSession(m_currentItem, m_isSketchMode, elapsedSec);
+    }
+
+    // Устанавливаем новое изделие
+    m_currentItem = newItem;
+
+    // Загружаем накопленное время из базы для нового изделия
+    m_sketchAccumulatedSec = m_statsDb->getTotalTime(m_currentItem, true);
+    m_drawingAccumulatedSec = m_statsDb->getTotalTime(m_currentItem, false);
+
+    updateTimerLabel();
+    statusBar()->showMessage(QString("Переключено на изделие: %1").arg(m_currentItem));
 }
