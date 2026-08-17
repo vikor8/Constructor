@@ -247,7 +247,7 @@ void Constructor::setupFileSystemModel()
 {
     // Включаем Drag & Drop (только копирование наружу)
     ui->m_toFolderView->setDragEnabled(true);
-    ui->m_toFolderView->setAcceptDrops(false);           // не принимаем файлы извне
+    ui->m_toFolderView->setAcceptDrops(true);           // не принимаем файлы извне
     ui->m_toFolderView->setDropIndicatorShown(false);
     ui->m_toFolderView->setDragDropMode(QAbstractItemView::DragOnly);
 
@@ -581,10 +581,61 @@ void Constructor::openDrawingsFolder()
     QString orderFolderPath = findOrderFolder(orderNumber, m_drawingsFolder);
 
     if (orderFolderPath.isEmpty()) {
-        QMessageBox::information(this, "Не найдено",
-                                 QString("Папка с чертежами для заказа №%1 не найдена в:\n%2")
-                                     .arg(orderNumber, m_drawingsFolder));
-        return;
+        // Папка в чертежах не найдена, попробуем взять имя из папки ТО
+        QString toOrderPath;
+        if (!m_toFolder.isEmpty()) {
+            toOrderPath = findOrderFolder(orderNumber, m_toFolder);
+        }
+
+        if (toOrderPath.isEmpty()) {
+            QMessageBox::information(this, "Не найдено",
+                                     QString("Папка с чертежами для заказа №%1 не найдена в:\n%2")
+                                         .arg(orderNumber, m_drawingsFolder));
+            return;
+        }
+
+        // Получаем имя папки из ТО
+        QDir toOrderDir(toOrderPath);
+        QString cleanName = toOrderDir.dirName();
+
+        // Убираем префикс "№ " или "№"
+        if (cleanName.startsWith("№ ")) {
+            cleanName.remove(0, 2);  // удаляем "№" и пробел
+        } else if (cleanName.startsWith("№")) {
+            cleanName.remove(0, 1);  // удаляем только "№"
+        }
+        cleanName = cleanName.trimmed();
+
+        if (cleanName.isEmpty()) {
+            QMessageBox::information(this, "Не найдено",
+                                     QString("Не удалось определить имя папки для заказа №%1.").arg(orderNumber));
+            return;
+        }
+
+        // Спрашиваем пользователя
+        QMessageBox::StandardButton reply = QMessageBox::question(
+            this,
+            "Создать папку чертежей",
+            QString("Папка с чертежами для заказа №%1 не найдена.\n"
+                    "Создать папку \"%2\" в каталоге чертежей?")
+                .arg(orderNumber, cleanName),
+            QMessageBox::Yes | QMessageBox::No
+            );
+
+        if (reply != QMessageBox::Yes) {
+            return;
+        }
+
+        // Создаём папку
+        QString newFolderPath = QDir(m_drawingsFolder).filePath(cleanName);
+        QDir dir;
+        if (!dir.mkpath(newFolderPath)) {
+            QMessageBox::critical(this, "Ошибка",
+                                  QString("Не удалось создать папку:\n%1").arg(newFolderPath));
+            return;
+        }
+
+        orderFolderPath = newFolderPath;
     }
 
     // === Обновление истории ===
