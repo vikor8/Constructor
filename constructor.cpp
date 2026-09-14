@@ -52,6 +52,7 @@ Constructor::Constructor(QWidget *parent)
     // Настраиваем модель файловой системы
     setupFileSystemModel();
 
+
     // Загружаем сохранённые настройки
     loadSettings();
 
@@ -92,21 +93,21 @@ Constructor::Constructor(QWidget *parent)
     // Счётчик времени
     QAction *toggleStatsAction = viewMenu->addAction("Счетчик времени");
     toggleStatsAction->setCheckable(true);
-    toggleStatsAction->setChecked(true);
+    toggleStatsAction->setChecked(m_showStats);          // <-- из настроек
     connect(toggleStatsAction, &QAction::toggled,
             this, &Constructor::toggleStatsVisibility);
 
     // Панель заказов
     QAction *toggleToolbar1Action = viewMenu->addAction("Панель заказов");
     toggleToolbar1Action->setCheckable(true);
-    toggleToolbar1Action->setChecked(true);
+    toggleToolbar1Action->setChecked(m_showToolbar1);    // <-- из настроек
     connect(toggleToolbar1Action, &QAction::toggled,
             this, &Constructor::toggleToolbar1Visibility);
 
     // Панель изделий
     QAction *toggleToolbar2Action = viewMenu->addAction("Панель изделий");
     toggleToolbar2Action->setCheckable(true);
-    toggleToolbar2Action->setChecked(true);
+    toggleToolbar2Action->setChecked(m_showToolbar2);    // <-- из настроек
     connect(toggleToolbar2Action, &QAction::toggled,
             this, &Constructor::toggleToolbar2Visibility);
 
@@ -141,6 +142,7 @@ Constructor::Constructor(QWidget *parent)
     connect(actionDraw, &QAction::triggered, this, &Constructor::openDrawingsFolder);
     connect(actionCompare, &QAction::triggered, this, &Constructor::openPZFolder);
     tbar->setFixedWidth(70); //ширина тулбара
+    tbar->setVisible(m_showToolbar1);
 
     // ================== ВТОРОЙ ТУЛБАР (без счётчика) ==================
     QToolBar *tbar2 = new QToolBar("Панель изделий", this);
@@ -167,7 +169,7 @@ Constructor::Constructor(QWidget *parent)
     connect(actionCopyName, &QAction::triggered, this, &Constructor::copyFileName);
     connect(actionCopyArticul, &QAction::triggered, this, &Constructor::copyArticul);
     tbar2->setFixedWidth(70); //ширина тулбара
-
+    tbar2->setVisible(m_showToolbar2);
     // ================== ТРЕТИЙ ТУЛБАР: СЧЕТЧИК ВРЕМЕНИ ==================
     QToolBar *tbar3 = new QToolBar("Счетчик времени", this);
     m_toolbar3 = tbar3;
@@ -193,6 +195,7 @@ Constructor::Constructor(QWidget *parent)
     m_modeBtn->setMaximumWidth(70);
     tbar3->addWidget(m_modeBtn);
     tbar3->setFixedWidth(70); //ширина тулбара
+    tbar3->setVisible(m_showStats);
 
     // ======================= ИНИЦИАЛИЗАЦИЯ ТАЙМЕРА И БД =======================
     m_timerRunning = false;
@@ -219,21 +222,105 @@ Constructor::Constructor(QWidget *parent)
     statusBar()->showMessage("Ctrl+Клик - открыть в проводнике | Клик по заголовку - сортировка | Двойной клик - открыть файл");
 }
 
+void Constructor::updateHighlightMode(const QString &currentPath)
+{
+    // Всегда сначала сбрасываем прошлое состояние
+    m_proxyModel->disableHighlight();
+
+    if (m_toFolder.isEmpty() || m_drawingsFolder.isEmpty()) {
+        ui->m_toFolderView->viewport()->update();
+        return;
+    }
+
+    const QString cur          = QDir::cleanPath(QDir(currentPath).absolutePath());
+    const QString drawingsRoot = QDir::cleanPath(QDir(m_drawingsFolder).absolutePath());
+    const QString toRoot       = QDir::cleanPath(QDir(m_toFolder).absolutePath());
+
+    // --- Правило 1: никогда не подсвечиваем внутри ТО ---
+    if (cur == toRoot || cur.startsWith(toRoot + "/")) {
+        qDebug() << "[hl] skip: inside TO" << cur;
+        ui->m_toFolderView->viewport()->update();
+        return;
+    }
+
+    // --- Правило 2: подсветка только для прямых детей корня Чертежей ---
+    QFileInfo curInfo(cur);
+    const QString parentPath = QDir::cleanPath(curInfo.absolutePath());
+    if (parentPath != drawingsRoot) {
+        qDebug() << "[hl] skip: not child of drawings root. parent="
+                 << parentPath << "root=" << drawingsRoot;
+        ui->m_toFolderView->viewport()->update();
+        return;
+    }
+
+    const QString orderFolderName = curInfo.fileName();
+    const QString orderKey = CustomSortProxyModel::extractNumberKey(orderFolderName);
+    qDebug() << "[hl] orderFolderName =" << orderFolderName
+             << "orderKey =" << orderKey;
+
+    if (orderKey.isEmpty()) {
+        ui->m_toFolderView->viewport()->update();
+        return;
+    }
+
+    // --- Ищем в ТО папку заказа с тем же ключом ---
+    QDir toDir(toRoot);
+    const QStringList orders = toDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    QString toOrderName;
+    for (const QString &name : orders) {
+        if (CustomSortProxyModel::extractNumberKey(name) == orderKey) {
+            toOrderName = name;
+            break;
+        }
+    }
+    qDebug() << "[hl] matched TO order =" << toOrderName;
+
+    // Заказ в ТО не найден — все изделия отсутствуют
+    if (toOrderName.isEmpty()) {
+        m_proxyModel->enableMissingHighlight(true, cur, QString());
+        ui->m_toFolderView->viewport()->update();
+        return;
+    }
+
+    // --- Ищем подпапку "Чертежи" внутри ТО\№<order> ---
+    QDir toOrderDir(toDir.filePath(toOrderName));
+    const QStringList subs = toOrderDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    QString refFolder;
+    for (const QString &s : subs) {
+        if (s.startsWith(QStringLiteral("Чертеж"), Qt::CaseInsensitive) ||
+            s.startsWith(QStringLiteral("Drawings"), Qt::CaseInsensitive)) {
+            refFolder = toOrderDir.filePath(s);
+            break;
+        }
+    }
+    qDebug() << "[hl] refFolder =" << refFolder
+             << "exists =" << QDir(refFolder).exists();
+
+    m_proxyModel->enableMissingHighlight(true, cur, refFolder);
+    ui->m_toFolderView->viewport()->update();
+}
+
 void Constructor::toggleStatsVisibility(bool visible)
 {
+    m_showStats = visible;
     if (m_toolbar3) {
         m_toolbar3->setVisible(visible);
     }
+    saveSettings();
 }
 
 void Constructor::toggleToolbar1Visibility(bool visible)
 {
+    m_showToolbar1 = visible;
     if (m_toolbar1) m_toolbar1->setVisible(visible);
+    saveSettings();
 }
 
 void Constructor::toggleToolbar2Visibility(bool visible)
 {
+    m_showToolbar2 = visible;
     if (m_toolbar2) m_toolbar2->setVisible(visible);
+    saveSettings();
 }
 
 Constructor::~Constructor()
@@ -381,6 +468,10 @@ void Constructor::openFolderInView(const QString &path)
     QModelIndex sourceIndex = m_fileSystemModel->index(path);
     QModelIndex proxyIndex = m_proxyModel->mapFromSource(sourceIndex);
     ui->m_toFolderView->setRootIndex(proxyIndex);
+
+    // NEW: обновляем режим подсветки
+    updateHighlightMode(path);
+
 
     // Получаем имя папки
     QDir dir(path);
@@ -1046,6 +1137,10 @@ void Constructor::copyToTOFolder()
                                           }
 
                                           msgBox.exec();
+
+                                          if (m_proxyModel->highlightMissingEnabled())
+                                              m_proxyModel->rebuildReferenceKeys();
+
                                           refreshCurrentView();
                                       };
 
@@ -1180,6 +1275,11 @@ void Constructor::loadSettings()
     m_maxHistoryDisplay = m_settings.value("history_display_count", 3).toInt();
     // Ограничение на всякий случай
     if (m_maxHistoryDisplay < 1) m_maxHistoryDisplay = 3;
+    // Видимость панелей в меню "Вид"
+    m_showStats    = m_settings.value("view_show_stats",    true).toBool();
+    m_showToolbar1 = m_settings.value("view_show_toolbar1", true).toBool();
+    m_showToolbar2 = m_settings.value("view_show_toolbar2", true).toBool();
+
 }
 
 void Constructor::saveSettings()
@@ -1192,6 +1292,11 @@ void Constructor::saveSettings()
 
     m_settings.setValue("order_history", m_orderHistory);
     m_settings.setValue("history_display_count", m_maxHistoryDisplay);
+
+    // Видимость панелей в меню "Вид"
+    m_settings.setValue("view_show_stats",    m_showStats);
+    m_settings.setValue("view_show_toolbar1", m_showToolbar1);
+    m_settings.setValue("view_show_toolbar2", m_showToolbar2);
 }
 
 void Constructor::showSortSettingsDialog()
@@ -1356,14 +1461,17 @@ void Constructor::refreshCurrentView()
     QModelIndex sourceRoot = m_proxyModel->mapToSource(proxyRoot);
     QString currentPath = m_fileSystemModel->filePath(sourceRoot);
 
-    // Принудительно перезагружаем содержимое текущей папки
-    m_fileSystemModel->setRootPath(QDir::rootPath());   // сброс
-    m_fileSystemModel->setRootPath(currentPath);        // перезагрузка нужной папки
+    m_fileSystemModel->setRootPath(QDir::rootPath());
+    m_fileSystemModel->setRootPath(currentPath);
 
     QModelIndex newSourceRoot = m_fileSystemModel->index(currentPath);
-    QModelIndex newProxyRoot = m_proxyModel->mapFromSource(newSourceRoot);
+    QModelIndex newProxyRoot   = m_proxyModel->mapFromSource(newSourceRoot);
     ui->m_toFolderView->setRootIndex(newProxyRoot);
-    ui->m_toFolderView->expand(newProxyRoot);           // раскрываем обновлённую папку
+    ui->m_toFolderView->expand(newProxyRoot);
+
+    updateHighlightMode(currentPath);
+    if (m_proxyModel->highlightMissingEnabled())
+        m_proxyModel->rebuildReferenceKeys();
 }
 
 void Constructor::showHistorySettingsDialog()

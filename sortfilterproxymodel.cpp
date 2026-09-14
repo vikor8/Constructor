@@ -1,4 +1,5 @@
 #include "sortfilterproxymodel.h"
+#include <QRegularExpression>
 
 CustomSortProxyModel::CustomSortProxyModel(QObject *parent)
     : QSortFilterProxyModel(parent)
@@ -107,11 +108,103 @@ int CustomSortProxyModel::getFilePriority(const QString &suffix) const
     }
 
     // Группируем остальные файлы по типу
-    // Возвращаем хеш суффикса + большое смещение
     if (!suffix.isEmpty()) {
         return 1000 + qHash(suffix) % 1000;
     }
 
     // Файлы без расширения
     return 2000;
+}
+
+// ==================== Подсветка отсутствующих папок ====================
+
+void CustomSortProxyModel::enableMissingHighlight(bool enable,
+                                                  const QString &rootPath,
+                                                  const QString &refFolder)
+{
+    m_highlightRootPath = QDir::cleanPath(rootPath);
+    m_referenceFolder   = QDir::cleanPath(refFolder);
+    m_highlightMissing  = enable;
+
+    rebuildReferenceKeys();   // заполнит m_referenceKeys
+}
+
+void CustomSortProxyModel::disableHighlight()
+{
+    if (!m_highlightMissing) return;
+    m_highlightMissing = false;
+    notifyViewRefresh();
+}
+
+void CustomSortProxyModel::rebuildReferenceKeys()
+{
+    m_referenceKeys.clear();
+
+    if (m_referenceFolder.isEmpty()) {
+        notifyViewRefresh();
+        return;
+    }
+
+    QDir dir(m_referenceFolder);
+    if (!dir.exists()) {
+        notifyViewRefresh();
+        return;
+    }
+
+    const QStringList folders = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QString &name : folders) {
+        const QString key = extractNumberKey(name);
+        if (!key.isEmpty())
+            m_referenceKeys.insert(key);
+    }
+
+    notifyViewRefresh();
+}
+
+void CustomSortProxyModel::notifyViewRefresh()
+{
+    // Представление перерисовывается вручную через viewport()->update()
+    // из Constructor::updateHighlightMode.
+}
+
+// Извлекает "ключ" (номер заказа/изделия) из имени папки.
+// "Чертежи"           -> "" (не число, ключ отсутствует)
+// "№ 220"             -> "220"
+// "220 ADY Москва"    -> "220"
+// "220.04(1-5B)_M-2"  -> "220.04"
+// "220.07"            -> "220.07"
+QString CustomSortProxyModel::extractNumberKey(const QString &folderName)
+{
+    static const QRegularExpression re(
+        QStringLiteral("^\\s*(?:№\\s*)?(\\d+(?:\\.\\d+)?)"));
+    const QRegularExpressionMatch m = re.match(folderName);
+    if (m.hasMatch())
+        return m.captured(1);
+    return QString();
+}
+
+QVariant CustomSortProxyModel::data(const QModelIndex &index, int role) const
+{
+    if (role == Qt::BackgroundRole
+        && m_highlightMissing
+        && index.isValid())
+    {
+        QFileSystemModel *fsModel = qobject_cast<QFileSystemModel*>(sourceModel());
+        if (fsModel) {
+            const QModelIndex srcIdx = mapToSource(index);
+            if (srcIdx.column() == 0) {
+                const QFileInfo info = fsModel->fileInfo(srcIdx);
+                if (info.isDir()) {
+                    const QString parentPath = QDir::cleanPath(info.absolutePath());
+                    if (parentPath == m_highlightRootPath) {
+                        const QString key = extractNumberKey(info.fileName());
+                        if (!key.isEmpty() && !m_referenceKeys.contains(key)) {
+                            return QColor(255, 241, 118);   // жёлтый
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return QSortFilterProxyModel::data(index, role);
 }

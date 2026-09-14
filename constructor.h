@@ -90,6 +90,9 @@ private:
 
     QStringList m_orderHistory;
     int m_maxHistoryDisplay = 3;
+    bool m_showStats    = true;
+    bool m_showToolbar1 = true;
+    bool m_showToolbar2 = true;
 
     // Статистика и таймер
     StatsDatabase *m_statsDb;
@@ -120,6 +123,10 @@ private:
     QToolBar *m_toolbar2 = nullptr;
     QToolBar *m_toolbar3 = nullptr;
     QWidget *m_statsContainer = nullptr;
+
+    void updateHighlightMode(const QString &currentPath);
+
+
 };
 
 #endif // CONSTRUCTOR_H
