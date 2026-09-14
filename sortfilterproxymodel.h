@@ -36,6 +36,7 @@ public:
     // "220.04(1-5B)_M-2"   -> "220.04"
     // ⬇⬇⬇ ЭТУ СТРОКУ НУЖНО ПЕРЕНЕСТИ ИЗ private В public ⬇⬇⬇
     static QString extractNumberKey(const QString &folderName);
+     static QString extractOrderNumber(const QString &folderName);
 
     QVariant data(const QModelIndex &index,
                   int role = Qt::DisplayRole) const override;

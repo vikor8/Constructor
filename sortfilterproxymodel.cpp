@@ -183,6 +183,16 @@ QString CustomSortProxyModel::extractNumberKey(const QString &folderName)
     return QString();
 }
 
+QString CustomSortProxyModel::extractOrderNumber(const QString &folderName)
+{
+    static const QRegularExpression re(
+        QStringLiteral("^\\s*(?:№\\s*)?(\\d+)"));
+    const QRegularExpressionMatch m = re.match(folderName);
+    if (m.hasMatch())
+        return m.captured(1);
+    return QString();
+}
+
 QVariant CustomSortProxyModel::data(const QModelIndex &index, int role) const
 {
     if (role == Qt::BackgroundRole

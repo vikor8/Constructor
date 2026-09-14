@@ -839,11 +839,21 @@ void Constructor::copyToTOFolder()
         return;
     }
 
-    // Получаем номер заказа (первая часть до точки)
-    QString orderNumber = itemNumber;
-    if (itemNumber.contains('.')) {
-        orderNumber = itemNumber.split('.').first();
+    // === Определяем номер заказа — только ведущие цифры поля "№ Изделия" ===
+    // "220.04"          -> "220"
+    // "220.04(1-5B)"    -> "220"
+    // "220_1.04(1-5B)"  -> "220"
+    QString orderNumber = CustomSortProxyModel::extractOrderNumber(itemNumber);
+
+    if (orderNumber.isEmpty()) {
+        QMessageBox::warning(this, "Ошибка",
+                             QString("Не удалось определить номер заказа из '%1'.")
+                                 .arg(itemNumber));
+        return;
     }
+
+    qDebug() << "[->TO] itemNumber =" << itemNumber
+             << "orderNumber =" << orderNumber;
 
     QDir drawingsDir(m_drawingsFolder);
     QDir toDir(m_toFolder);
@@ -866,7 +876,7 @@ void Constructor::copyToTOFolder()
     QStringList localOrderCandidates;
 
     for (const QString& folderName : allLocalFolders) {
-        if (folderName.startsWith(orderNumber)) {
+        if (CustomSortProxyModel::extractOrderNumber(folderName) == orderNumber) {
             localOrderCandidates.append(folderName);
         }
     }
@@ -929,11 +939,10 @@ void Constructor::copyToTOFolder()
                                       QStringList networkOrderCandidates;
 
                                       for (const QString& folderName : allNetworkFolders) {
-                                          if (folderName.startsWith("№ " + orderNumber) || folderName.startsWith("№" + orderNumber)) {
+                                          if (CustomSortProxyModel::extractOrderNumber(folderName) == orderNumber) {
                                               networkOrderCandidates.append(folderName);
                                           }
                                       }
-
                                       if (networkOrderCandidates.isEmpty()) {
                                           QMessageBox::critical(this, "Ошибка",
                                                                 QString("Не найдена сетевая папка '№ %1' в:\n%2")
