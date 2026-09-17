@@ -33,10 +33,15 @@ public:
     // Утилита: получить "числовой ключ" из имени папки.
     // "№ 220"              -> "220"
     // "220 ADY Москва"     -> "220"
-    // "220.04(1-5B)_M-2"   -> "220.04"
-    // ⬇⬇⬇ ЭТУ СТРОКУ НУЖНО ПЕРЕНЕСТИ ИЗ private В public ⬇⬇⬇
+    // "220.04(1-5B)_M-2"   -> "220.04"    
     static QString extractNumberKey(const QString &folderName);
-     static QString extractOrderNumber(const QString &folderName);
+    static QString extractOrderNumber(const QString &folderName);
+
+    // Разбор имени папки изделия вида "220.04(1-5B)_M-2.11 Хранение в нише"
+    static QString parseItemArticle(const QString &folderName); // "220.04(1-5B)"
+    static QString parseItemName(const QString &folderName);    // "M-2.11 Хранение в нише"
+    static int     parseItemPoints(const QString &folderName);  // 5 (из скобок)
+
 
     QVariant data(const QModelIndex &index,
                   int role = Qt::DisplayRole) const override;

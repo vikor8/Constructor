@@ -209,7 +209,7 @@ QVariant CustomSortProxyModel::data(const QModelIndex &index, int role) const
                     if (parentPath == m_highlightRootPath) {
                         const QString key = extractNumberKey(info.fileName());
                         if (!key.isEmpty() && !m_referenceKeys.contains(key)) {
-                            return QColor(255, 241, 118);   // жёлтый
+                            return QColor(255, 249, 196);   // жёлтый
                         }
                     }
                 }
@@ -217,4 +217,44 @@ QVariant CustomSortProxyModel::data(const QModelIndex &index, int role) const
         }
     }
     return QSortFilterProxyModel::data(index, role);
+}
+
+QString CustomSortProxyModel::parseItemArticle(const QString &folderName)
+{
+    const QString s = folderName.trimmed();
+
+    // Вариант 1: есть скобки со сторонами "(1-5B)" → артикул до закрывающей скобки
+    static const QRegularExpression reWithParens(
+        QStringLiteral("^(.*?\\([^)]*\\))"));
+    const QRegularExpressionMatch m1 = reWithParens.match(s);
+    if (m1.hasMatch())
+        return m1.captured(1).trimmed();
+
+    // Вариант 2: без скобок — артикул до первого пробела или '_'
+    int pos = s.indexOf(QRegularExpression(QStringLiteral("[ _]")));
+    if (pos < 0) return s;
+    return s.left(pos);
+}
+
+QString CustomSortProxyModel::parseItemName(const QString &folderName)
+{
+    const QString s = folderName.trimmed();
+    const QString article = parseItemArticle(folderName);
+    if (article.isEmpty() || article == s) return QString();
+
+    QString rest = s.mid(article.length());
+    // Убираем ведущие '_' и пробелы
+    while (!rest.isEmpty() && (rest.startsWith('_') || rest.startsWith(' ')))
+        rest.remove(0, 1);
+    return rest.trimmed();
+}
+
+int CustomSortProxyModel::parseItemPoints(const QString &folderName)
+{
+    static const QRegularExpression re(
+        QStringLiteral("\\([^)]*?-(\\d+)[^0-9)]*?\\)"));
+    const QRegularExpressionMatch m = re.match(folderName);
+    if (m.hasMatch())
+        return m.captured(1).toInt();
+    return 0;
 }

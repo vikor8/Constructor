@@ -27,6 +27,8 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class Constructor; }
 QT_END_NAMESPACE
 
+class StatisticsDialog;   // forward declaration
+
 class Constructor : public QMainWindow
 {
     Q_OBJECT
@@ -63,6 +65,7 @@ private slots:
     void toggleStatsVisibility(bool visible);
     void toggleToolbar1Visibility(bool visible);
     void toggleToolbar2Visibility(bool visible);
+    void openStatisticsDialog();
 
 private:
     void loadSettings();
@@ -125,6 +128,7 @@ private:
     QWidget *m_statsContainer = nullptr;
 
     void updateHighlightMode(const QString &currentPath);
+    StatisticsDialog *m_statsDialog = nullptr;
 
 
 };

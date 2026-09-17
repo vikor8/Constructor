@@ -3,6 +3,8 @@
 #include <QSqlError>
 #include <QDebug>
 #include <QCoreApplication>
+#include <QDate>
+#include <QDebug>
 
 StatsDatabase::StatsDatabase(QObject *parent) : QObject(parent) {}
 
@@ -20,21 +22,41 @@ bool StatsDatabase::init(const QString &dbPath) {
     return createTables();
 }
 
-bool StatsDatabase::createTables() {
+bool StatsDatabase::createTables()
+{
     QSqlQuery q(m_db);
-    return q.exec(
-        "CREATE TABLE IF NOT EXISTS work_sessions ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "item_number TEXT NOT NULL,"
-        "sketch_time_sec INTEGER DEFAULT 0,"
-        "sketch_start DATETIME,"
-        "sketch_end DATETIME,"
-        "drawing_time_sec INTEGER DEFAULT 0,"
-        "drawing_start DATETIME,"
-        "drawing_end DATETIME,"
-        "total_time_sec INTEGER DEFAULT 0"
-        ")"
-        );
+
+    if (!q.exec(
+            "CREATE TABLE IF NOT EXISTS work_sessions ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "item_number TEXT NOT NULL,"
+            "sketch_time_sec INTEGER DEFAULT 0,"
+            "sketch_start DATETIME,"
+            "sketch_end DATETIME,"
+            "drawing_time_sec INTEGER DEFAULT 0,"
+            "drawing_start DATETIME,"
+            "drawing_end DATETIME,"
+            "total_time_sec INTEGER DEFAULT 0"
+            ")")) {
+        return false;
+    }
+
+    if (!q.exec(
+            "CREATE TABLE IF NOT EXISTS sent_to_to ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "article TEXT NOT NULL,"       // артикул с баллами, "220.04(1-5B)"
+            "name TEXT,"                   // наименование
+            "order_number TEXT,"           // "220"
+            "points INTEGER DEFAULT 0,"    // 5
+            "sent_at DATETIME NOT NULL"
+            ")")) {
+        return false;
+    }
+
+    // Индекс по дате — ускорит выборку по периоду
+    q.exec("CREATE INDEX IF NOT EXISTS idx_sent_at ON sent_to_to(sent_at)");
+
+    return true;
 }
 
 int StatsDatabase::getActiveSessionId(const QString &itemNumber, bool isSketch) {
@@ -130,4 +152,73 @@ int StatsDatabase::getTotalTime(const QString &itemNumber, bool isSketch)
         return q.value(0).toInt();
     }
     return 0;
+}
+
+bool StatsDatabase::recordSentToTO(const QString &article,
+                                   const QString &name,
+                                   const QString &orderNumber,
+                                   int points)
+{
+    QSqlQuery q(m_db);
+    q.prepare("INSERT INTO sent_to_to "
+              "(article, name, order_number, points, sent_at) "
+              "VALUES (?, ?, ?, ?, datetime('now','localtime'))");
+    q.addBindValue(article);
+    q.addBindValue(name);
+    q.addBindValue(orderNumber);
+    q.addBindValue(points);
+    return q.exec();
+}
+
+QList<SentRecord> StatsDatabase::findSentRecords(const QDate &from,
+                                                 const QDate &to,
+                                                 const QString &articleLike)
+{
+    QList<SentRecord> list;
+
+    // Берём только последнюю отправку по каждому артикулу (MAX(id)).
+    // Если артикул отправлялся несколько раз — попадёт только свежая запись.
+    QString sql =
+        "SELECT s.id, s.article, s.name, s.order_number, s.points, s.sent_at "
+        "FROM sent_to_to s "
+        "WHERE s.id IN (SELECT MAX(id) FROM sent_to_to GROUP BY article)";
+
+    if (from.isValid())
+        sql += " AND date(s.sent_at) >= date(?)";
+    if (to.isValid())
+        sql += " AND date(s.sent_at) <= date(?)";
+    if (!articleLike.isEmpty())
+        sql += " AND (s.article LIKE ? OR s.name LIKE ?)";
+
+    sql += " ORDER BY s.sent_at DESC, s.order_number ASC, s.article ASC";
+
+    QSqlQuery q(m_db);
+    q.prepare(sql);
+
+    if (from.isValid())
+        q.addBindValue(from.toString("yyyy-MM-dd"));
+    if (to.isValid())
+        q.addBindValue(to.toString("yyyy-MM-dd"));
+    if (!articleLike.isEmpty()) {
+        const QString like = "%" + articleLike + "%";
+        q.addBindValue(like);
+        q.addBindValue(like);
+    }
+
+    if (q.exec()) {
+        while (q.next()) {
+            SentRecord r;
+            r.id          = q.value(0).toInt();
+            r.article     = q.value(1).toString();
+            r.name        = q.value(2).toString();
+            r.orderNumber = q.value(3).toString();
+            r.points      = q.value(4).toInt();
+            r.sentAt      = q.value(5).toDateTime();
+            list.append(r);
+        }
+    } else {
+        qWarning() << "findSentRecords failed:" << q.lastError().text();
+    }
+
+    return list;
 }

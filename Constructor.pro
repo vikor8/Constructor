@@ -12,6 +12,7 @@ SOURCES += \
     constructor.cpp \
     modebutton.cpp \
     sortfilterproxymodel.cpp \
+    statisticsdialog.cpp \
     statsdatabase.cpp
 
 HEADERS += \
@@ -19,10 +20,12 @@ HEADERS += \
     flipbutton.h \
     modebutton.h \
     sortfilterproxymodel.h \
+    statisticsdialog.h \
     statsdatabase.h
 
 FORMS += \
-    constructor.ui
+    constructor.ui \
+    statisticsdialog.ui
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

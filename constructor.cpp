@@ -23,6 +23,8 @@
 #include <QVBoxLayout>
 #include <QClipboard>
 #include <QRegularExpression>
+#include <QPushButton>
+#include "statisticsdialog.h"
 
 
 Constructor::Constructor(QWidget *parent)
@@ -110,6 +112,16 @@ Constructor::Constructor(QWidget *parent)
     toggleToolbar2Action->setChecked(m_showToolbar2);    // <-- из настроек
     connect(toggleToolbar2Action, &QAction::toggled,
             this, &Constructor::toggleToolbar2Visibility);
+
+    QPushButton *statsButton = new QPushButton("Статистика", this);
+    statsButton->setFlat(true);
+    statsButton->setCursor(Qt::PointingHandCursor);
+    statsButton->setFocusPolicy(Qt::NoFocus);
+
+    menuBar->setCornerWidget(statsButton, Qt::TopRightCorner);
+
+    connect(statsButton, &QPushButton::clicked,
+            this, &Constructor::openStatisticsDialog);
 
     // Устанавливаем менюбар
     setMenuBar(menuBar);
@@ -816,6 +828,7 @@ void Constructor::openDrawingsInTOFolder()
 }
 
 // Копирование файлов из чертежей в папку ТО
+// Копирование файлов из чертежей в папку ТО
 void Constructor::copyToTOFolder()
 {
     // Получаем номер изделия из поля ввода
@@ -871,7 +884,7 @@ void Constructor::copyToTOFolder()
         return;
     }
 
-    // === Шаг 1: Найти папки заказа локально ===
+    // === Шаг 1: Найти папки заказа локально (по числовому ключу) ===
     const QStringList allLocalFolders = drawingsDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     QStringList localOrderCandidates;
 
@@ -934,7 +947,7 @@ void Constructor::copyToTOFolder()
 
                                       QString itemFolderLocal = QDir(orderFolderLocal).filePath(itemFolderName);
 
-                                      // === Шаг 3: Найти сетевую папку заказа ===
+                                      // === Шаг 3: Найти сетевую папку заказа (по числовому ключу) ===
                                       const QStringList allNetworkFolders = toDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
                                       QStringList networkOrderCandidates;
 
@@ -943,6 +956,7 @@ void Constructor::copyToTOFolder()
                                               networkOrderCandidates.append(folderName);
                                           }
                                       }
+
                                       if (networkOrderCandidates.isEmpty()) {
                                           QMessageBox::critical(this, "Ошибка",
                                                                 QString("Не найдена сетевая папка '№ %1' в:\n%2")
@@ -952,7 +966,7 @@ void Constructor::copyToTOFolder()
 
                                       // Выбираем сетевую папку заказа
                                       auto processNetworkFolder = [this, itemFolderLocal, itemNumber, itemFolderName](const QString& networkOrderName) {
-                                          QString networkOrderPath = QDir(m_toFolder).filePath(networkOrderName);
+                                          QString networkOrderPath      = QDir(m_toFolder).filePath(networkOrderName);
                                           QString drawingsFolderNetwork = QDir(networkOrderPath).filePath("чертежи");
 
                                           // Создаем папку "чертежи" если её нет
@@ -963,33 +977,9 @@ void Constructor::copyToTOFolder()
 
                                           QString targetItemFolder = QDir(drawingsFolderNetwork).filePath(itemFolderName);
 
-                                          // Проверяем, существует ли уже папка
-                                          if (QDir(targetItemFolder).exists()) {
-                                              QMessageBox::StandardButton reply = QMessageBox::question(
-                                                  this,
-                                                  "Папка уже существует",
-                                                  QString("Папка уже существует:\n%1\n\nЗаменить?")
-                                                      .arg(targetItemFolder),
-                                                  QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel
-                                                  );
-
-                                              if (reply == QMessageBox::No) {
-                                                  QMessageBox::information(this, "Пропущено", "Копирование отменено: папка уже существует.");
-                                                  return;
-                                              } else if (reply == QMessageBox::Cancel) {
-                                                  return;
-                                              } else if (reply == QMessageBox::Yes) {
-                                                  // Удаляем старую папку
-                                                  QDir(targetItemFolder).removeRecursively();
-                                              }
-                                          }
-
-                                          // Создаем новую папку
-                                          QDir().mkpath(targetItemFolder);
-
-                                          // === Копирование файлов ===
-                                          QStringList extensionsMain = {".pdf", ".xls", ".bln", ".xbir"};
-                                          QStringList extensionsLaser = {".dxf", ".igs"};
+                                          // === Собираем файлы по категориям (нужно ДО диалога — для проверки конфликтов) ===
+                                          QStringList extensionsMain       = {".pdf", ".xls", ".bln", ".xbir"};
+                                          QStringList extensionsLaser      = {".dxf", ".igs"};
                                           QStringList extensionsSolidWorks = {".sldprt", ".sldasm", ".slddrw"};
 
                                           QStringList copiedFiles;
@@ -1000,7 +990,6 @@ void Constructor::copyToTOFolder()
                                           QDir itemDir(itemFolderLocal);
                                           const QStringList allFiles = itemDir.entryList(QDir::Files);
 
-                                          // Собираем информацию о найденных файлах
                                           for (const QString& fileName : allFiles) {
                                               QFileInfo fileInfo(fileName);
                                               QString ext = "." + fileInfo.suffix().toLower();
@@ -1011,6 +1000,175 @@ void Constructor::copyToTOFolder()
                                                   laserFiles.append(fileName);
                                               } else if (extensionsMain.contains(ext)) {
                                                   copiedFiles.append(fileName);
+                                              }
+                                          }
+
+                                          // === Обработка существующей папки ===
+                                          QStringList filesToOverwrite;   // ключи файлов, которые надо перезаписать
+                                          bool replaceAll = false;        // true = удалили папку целиком
+
+                                          if (QDir(targetItemFolder).exists()) {
+                                              // Собираем список конфликтов
+                                              QStringList conflicts;
+                                              const QString laserSub = QDir(targetItemFolder).filePath("Лазер");
+                                              const QString swSub    = QDir(targetItemFolder).filePath("SolidWorks");
+
+                                              for (const QString &f : copiedFiles)
+                                                  if (QFile::exists(QDir(targetItemFolder).filePath(f)))
+                                                      conflicts.append(f);
+
+                                              for (const QString &f : laserFiles)
+                                                  if (QFile::exists(QDir(laserSub).filePath(f)))
+                                                      conflicts.append(QStringLiteral("Лазер/") + f);
+
+                                              for (const QString &f : solidWorksFiles)
+                                                  if (QFile::exists(QDir(swSub).filePath(f)))
+                                                      conflicts.append(QStringLiteral("SolidWorks/") + f);
+
+                                              // Диалог с тремя кнопками
+                                              QMessageBox box(this);
+                                              box.setWindowTitle("Папка уже существует");
+                                              box.setText(QString("Папка уже существует:\n%1\n\nЧто сделать?")
+                                                              .arg(targetItemFolder));
+                                              box.setIcon(QMessageBox::Question);
+
+                                              QPushButton *btnReplace = box.addButton(QStringLiteral("Заменить всё"),
+                                                                                      QMessageBox::YesRole);
+                                              QPushButton *btnPartial = box.addButton(QStringLiteral("Частично..."),
+                                                                                      QMessageBox::ActionRole);
+                                              QPushButton *btnSkip    = box.addButton(QStringLiteral("Пропустить"),
+                                                                                   QMessageBox::NoRole);
+                                              box.setDefaultButton(btnReplace);
+                                              box.exec();
+
+                                              if (box.clickedButton() == btnSkip) {
+                                                  QMessageBox::information(this, "Пропущено",
+                                                                           "Копирование отменено: папка уже существует.");
+                                                  return;
+                                              }
+
+                                              if (box.clickedButton() == btnReplace) {
+                                                  QDir(targetItemFolder).removeRecursively();
+                                                  replaceAll = true;
+                                              } else if (box.clickedButton() == btnPartial) {
+                                                  // Диалог выбора файлов для замены
+                                                  if (!conflicts.isEmpty()) {
+                                                      QDialog dlg(this);
+                                                      dlg.setWindowTitle("Частичная замена файлов");
+                                                      dlg.resize(560, 420);
+                                                      QVBoxLayout *lay = new QVBoxLayout(&dlg);
+
+                                                      QLabel *hint = new QLabel(
+                                                          QString("Найдено %1 совпадающих файл(ов).\n"
+                                                                  "Отметьте те, которые нужно заменить. "
+                                                                  "Непомеченные останутся без изменений.")
+                                                              .arg(conflicts.size()));
+                                                      hint->setWordWrap(true);
+                                                      lay->addWidget(hint);
+
+                                                      QListWidget *list = new QListWidget(&dlg);
+                                                      for (const QString &key : conflicts) {
+                                                          QListWidgetItem *it = new QListWidgetItem(key);
+                                                          it->setFlags(it->flags() | Qt::ItemIsUserCheckable);
+                                                          it->setCheckState(Qt::Checked);   // по умолчанию — все заменяем
+                                                          it->setData(Qt::UserRole, key);
+                                                          list->addItem(it);
+                                                      }
+                                                      lay->addWidget(list);
+
+                                                      QHBoxLayout *bLay = new QHBoxLayout();
+                                                      QPushButton *bAll  = new QPushButton(QStringLiteral("Отметить всё"));
+                                                      QPushButton *bNone = new QPushButton(QStringLiteral("Снять всё"));
+                                                      bLay->addWidget(bAll);
+                                                      bLay->addWidget(bNone);
+                                                      bLay->addStretch();
+                                                      lay->addLayout(bLay);
+
+                                                      connect(bAll, &QPushButton::clicked, [list]() {
+                                                          for (int i = 0; i < list->count(); ++i)
+                                                              list->item(i)->setCheckState(Qt::Checked);
+                                                      });
+                                                      connect(bNone, &QPushButton::clicked, [list]() {
+                                                          for (int i = 0; i < list->count(); ++i)
+                                                              list->item(i)->setCheckState(Qt::Unchecked);
+                                                      });
+
+                                                      QDialogButtonBox *bb = new QDialogButtonBox(
+                                                          QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+                                                      lay->addWidget(bb);
+                                                      connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+                                                      connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+                                                      if (dlg.exec() != QDialog::Accepted)
+                                                          return;   // пользователь отменил — ничего не делаем
+
+                                                      for (int i = 0; i < list->count(); ++i) {
+                                                          QListWidgetItem *it = list->item(i);
+                                                          if (it->checkState() == Qt::Checked)
+                                                              filesToOverwrite.append(it->data(Qt::UserRole).toString());
+                                                      }
+                                                  }
+                                                  // Если конфликтов нет — просто доливаем новые файлы, ничего не удаляя
+                                              }
+                                          }
+
+                                          // Гарантируем существование папки-приёмника
+                                          QDir().mkpath(targetItemFolder);
+
+                                          // Хелпер копирования с учётом выбора пользователя
+                                          auto copyChecked = [&](const QString &srcPath,
+                                                                 const QString &dstPath,
+                                                                 const QString &key) -> bool {
+                                              const bool exists = QFile::exists(dstPath);
+                                              if (exists) {
+                                                  // Если мы не в режиме "заменить всё" и файла нет в списке на замену — пропускаем
+                                                  if (!replaceAll && !filesToOverwrite.contains(key)) {
+                                                      return true;
+                                                  }
+                                                  QFile::remove(dstPath);   // иначе QFile::copy не перезапишет
+                                              }
+                                              return QFile::copy(srcPath, dstPath);
+                                          };
+
+                                          // Копируем основные файлы
+                                          for (const QString& fileName : copiedFiles) {
+                                              QString srcPath = itemDir.filePath(fileName);
+                                              QString dstPath = QDir(targetItemFolder).filePath(fileName);
+                                              if (!copyChecked(srcPath, dstPath, fileName)) {
+                                                  QMessageBox::warning(this, "Предупреждение",
+                                                                       QString("Не удалось скопировать файл:\n%1").arg(fileName));
+                                              }
+                                          }
+
+                                          // Копируем лазерные файлы в подпапку "Лазер"
+                                          if (!laserFiles.isEmpty()) {
+                                              QString laserFolder = QDir(targetItemFolder).filePath("Лазер");
+                                              QDir().mkpath(laserFolder);
+
+                                              for (const QString& fileName : laserFiles) {
+                                                  QString srcPath = itemDir.filePath(fileName);
+                                                  QString dstPath = QDir(laserFolder).filePath(fileName);
+                                                  QString key     = QStringLiteral("Лазер/") + fileName;
+                                                  if (!copyChecked(srcPath, dstPath, key)) {
+                                                      QMessageBox::warning(this, "Предупреждение",
+                                                                           QString("Не удалось скопировать файл:\n%1").arg(fileName));
+                                                  }
+                                              }
+                                          }
+
+                                          // Копируем SolidWorks файлы в подпапку "SolidWorks"
+                                          if (!solidWorksFiles.isEmpty()) {
+                                              QString solidWorksFolder = QDir(targetItemFolder).filePath("SolidWorks");
+                                              QDir().mkpath(solidWorksFolder);
+
+                                              for (const QString& fileName : solidWorksFiles) {
+                                                  QString srcPath = itemDir.filePath(fileName);
+                                                  QString dstPath = QDir(solidWorksFolder).filePath(fileName);
+                                                  QString key     = QStringLiteral("SolidWorks/") + fileName;
+                                                  if (!copyChecked(srcPath, dstPath, key)) {
+                                                      QMessageBox::warning(this, "Предупреждение",
+                                                                           QString("Не удалось скопировать файл:\n%1").arg(fileName));
+                                                  }
                                               }
                                           }
 
@@ -1026,46 +1184,6 @@ void Constructor::copyToTOFolder()
                                               }
                                               if (!found) {
                                                   missingFiles.append(ext);
-                                              }
-                                          }
-
-                                          // Копируем основные файлы
-                                          for (const QString& fileName : copiedFiles) {
-                                              QString srcPath = itemDir.filePath(fileName);
-                                              QString dstPath = QDir(targetItemFolder).filePath(fileName);
-                                              if (!QFile::copy(srcPath, dstPath)) {
-                                                  QMessageBox::warning(this, "Предупреждение",
-                                                                       QString("Не удалось скопировать файл:\n%1").arg(fileName));
-                                              }
-                                          }
-
-                                          // Копируем лазерные файлы в подпапку "Лазер"
-                                          if (!laserFiles.isEmpty()) {
-                                              QString laserFolder = QDir(targetItemFolder).filePath("Лазер");
-                                              QDir().mkpath(laserFolder);
-
-                                              for (const QString& fileName : laserFiles) {
-                                                  QString srcPath = itemDir.filePath(fileName);
-                                                  QString dstPath = QDir(laserFolder).filePath(fileName);
-                                                  if (!QFile::copy(srcPath, dstPath)) {
-                                                      QMessageBox::warning(this, "Предупреждение",
-                                                                           QString("Не удалось скопировать файл:\n%1").arg(fileName));
-                                                  }
-                                              }
-                                          }
-
-                                          // Копируем SolidWorks файлы в подпапку "SolidWorks"
-                                          if (!solidWorksFiles.isEmpty()) {
-                                              QString solidWorksFolder = QDir(targetItemFolder).filePath("SolidWorks");
-                                              QDir().mkpath(solidWorksFolder);
-
-                                              for (const QString& fileName : solidWorksFiles) {
-                                                  QString srcPath = itemDir.filePath(fileName);
-                                                  QString dstPath = QDir(solidWorksFolder).filePath(fileName);
-                                                  if (!QFile::copy(srcPath, dstPath)) {
-                                                      QMessageBox::warning(this, "Предупреждение",
-                                                                           QString("Не удалось скопировать файл:\n%1").arg(fileName));
-                                                  }
                                               }
                                           }
 
@@ -1131,6 +1249,23 @@ void Constructor::copyToTOFolder()
 
                                           report += "</body></html>";
 
+                                          // === Записываем факт отправки в ТО ===
+                                          {
+                                              const QString article  = CustomSortProxyModel::parseItemArticle(itemFolderName);
+                                              const QString name     = CustomSortProxyModel::parseItemName(itemFolderName);
+                                              const QString orderNum = CustomSortProxyModel::extractOrderNumber(itemFolderName);
+                                              const int     points   = CustomSortProxyModel::parseItemPoints(itemFolderName);
+
+                                              if (!article.isEmpty()) {
+                                                  if (!m_statsDb->recordSentToTO(article, name, orderNum, points)) {
+                                                      qWarning() << "Не удалось записать в БД:";
+                                                  } else {
+                                                      qDebug() << "[->TO] записано в БД:"
+                                                               << article << "|" << name << "|" << orderNum << "|" << points;
+                                                  }
+                                              }
+                                          }
+
                                           // Показываем отчет в HTML формате
                                           QMessageBox msgBox;
                                           msgBox.setWindowTitle("Результат копирования");
@@ -1179,7 +1314,6 @@ void Constructor::copyToTOFolder()
         openFolderInView(currentPath.absoluteFilePath());
     }
 }
-
 // Выбор папки ТО
 void Constructor::selectTOFolder()
 {
@@ -1701,4 +1835,9 @@ void Constructor::onProductLineEditChanged(const QString &text)
 
     updateTimerLabel();
     statusBar()->showMessage(QString("Переключено на изделие: %1").arg(m_currentItem));
+}
+void Constructor::openStatisticsDialog()
+{
+    StatisticsDialog dlg(m_statsDb, this);
+    dlg.exec();
 }
