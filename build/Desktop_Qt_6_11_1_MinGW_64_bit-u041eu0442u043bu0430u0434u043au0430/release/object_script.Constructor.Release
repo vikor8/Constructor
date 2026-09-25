@@ -1,0 +1,13 @@
+release/flipbutton.o
+release/main.o
+release/constructor.o
+release/modebutton.o
+release/sortfilterproxymodel.o
+release/statisticsdialog.o
+release/statsdatabase.o
+release/moc_constructor.o
+release/moc_flipbutton.o
+release/moc_modebutton.o
+release/moc_sortfilterproxymodel.o
+release/moc_statisticsdialog.o
+release/moc_statsdatabase.o
