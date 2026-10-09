@@ -1004,28 +1004,40 @@ void Constructor::copyToTOFolder()
                                           }
 
                                           // === Обработка существующей папки ===
-                                          QStringList filesToOverwrite;   // ключи файлов, которые надо перезаписать
-                                          bool replaceAll = false;        // true = удалили папку целиком
+                                          QStringList selectedFiles;    // отмеченные файлы в режиме "Частично"
+                                          bool partialMode = false;     // true = выбран режим "Частично"
 
                                           if (QDir(targetItemFolder).exists()) {
-                                              // Собираем список конфликтов
-                                              QStringList conflicts;
+
+                                              // --- Собираем два списка: что уже есть в ТО / что только в источнике ---
+                                              QStringList existingInTO;
+                                              QStringList newInSource;
+
                                               const QString laserSub = QDir(targetItemFolder).filePath("Лазер");
                                               const QString swSub    = QDir(targetItemFolder).filePath("SolidWorks");
 
-                                              for (const QString &f : copiedFiles)
+                                              for (const QString &f : copiedFiles) {
                                                   if (QFile::exists(QDir(targetItemFolder).filePath(f)))
-                                                      conflicts.append(f);
-
-                                              for (const QString &f : laserFiles)
+                                                      existingInTO.append(f);
+                                                  else
+                                                      newInSource.append(f);
+                                              }
+                                              for (const QString &f : laserFiles) {
+                                                  const QString key = QStringLiteral("Лазер/") + f;
                                                   if (QFile::exists(QDir(laserSub).filePath(f)))
-                                                      conflicts.append(QStringLiteral("Лазер/") + f);
-
-                                              for (const QString &f : solidWorksFiles)
+                                                      existingInTO.append(key);
+                                                  else
+                                                      newInSource.append(key);
+                                              }
+                                              for (const QString &f : solidWorksFiles) {
+                                                  const QString key = QStringLiteral("SolidWorks/") + f;
                                                   if (QFile::exists(QDir(swSub).filePath(f)))
-                                                      conflicts.append(QStringLiteral("SolidWorks/") + f);
+                                                      existingInTO.append(key);
+                                                  else
+                                                      newInSource.append(key);
+                                              }
 
-                                              // Диалог с тремя кнопками
+                                              // --- Диалог с тремя кнопками ---
                                               QMessageBox box(this);
                                               box.setWindowTitle("Папка уже существует");
                                               box.setText(QString("Папка уже существует:\n%1\n\nЧто сделать?")
@@ -1049,31 +1061,48 @@ void Constructor::copyToTOFolder()
 
                                               if (box.clickedButton() == btnReplace) {
                                                   QDir(targetItemFolder).removeRecursively();
-                                                  replaceAll = true;
+                                                  partialMode = false;      // копируем всё — папка пересоздана пустой
                                               } else if (box.clickedButton() == btnPartial) {
-                                                  // Диалог выбора файлов для замены
-                                                  if (!conflicts.isEmpty()) {
+                                                  partialMode = true;
+
+                                                  // --- Диалог выбора файлов ---
+                                                  if (!existingInTO.isEmpty() || !newInSource.isEmpty()) {
                                                       QDialog dlg(this);
                                                       dlg.setWindowTitle("Частичная замена файлов");
-                                                      dlg.resize(560, 420);
+                                                      dlg.resize(600, 480);
                                                       QVBoxLayout *lay = new QVBoxLayout(&dlg);
 
                                                       QLabel *hint = new QLabel(
-                                                          QString("Найдено %1 совпадающих файл(ов).\n"
-                                                                  "Отметьте те, которые нужно заменить. "
+                                                          QString("Файлов уже в ТО: %1. Новых файлов: %2.\n"
+                                                                  "Отметьте те, которые нужно заменить/скопировать. "
                                                                   "Непомеченные останутся без изменений.")
-                                                              .arg(conflicts.size()));
+                                                              .arg(existingInTO.size())
+                                                              .arg(newInSource.size()));
                                                       hint->setWordWrap(true);
                                                       lay->addWidget(hint);
 
                                                       QListWidget *list = new QListWidget(&dlg);
-                                                      for (const QString &key : conflicts) {
-                                                          QListWidgetItem *it = new QListWidgetItem(key);
+
+                                                      // Сначала — существующие (перезапись)
+                                                      for (const QString &key : existingInTO) {
+                                                          QListWidgetItem *it =
+                                                              new QListWidgetItem(key + QStringLiteral("   [перезаписать]"));
                                                           it->setFlags(it->flags() | Qt::ItemIsUserCheckable);
-                                                          it->setCheckState(Qt::Checked);   // по умолчанию — все заменяем
+                                                          it->setCheckState(Qt::Checked);
                                                           it->setData(Qt::UserRole, key);
                                                           list->addItem(it);
                                                       }
+
+                                                      // Потом — новые (в том числе Excel, которого нет в ТО)
+                                                      for (const QString &key : newInSource) {
+                                                          QListWidgetItem *it =
+                                                              new QListWidgetItem(key + QStringLiteral("   [новый]"));
+                                                          it->setFlags(it->flags() | Qt::ItemIsUserCheckable);
+                                                          it->setCheckState(Qt::Checked);
+                                                          it->setData(Qt::UserRole, key);
+                                                          list->addItem(it);
+                                                      }
+
                                                       lay->addWidget(list);
 
                                                       QHBoxLayout *bLay = new QHBoxLayout();
@@ -1105,27 +1134,25 @@ void Constructor::copyToTOFolder()
                                                       for (int i = 0; i < list->count(); ++i) {
                                                           QListWidgetItem *it = list->item(i);
                                                           if (it->checkState() == Qt::Checked)
-                                                              filesToOverwrite.append(it->data(Qt::UserRole).toString());
+                                                              selectedFiles.append(it->data(Qt::UserRole).toString());
                                                       }
                                                   }
-                                                  // Если конфликтов нет — просто доливаем новые файлы, ничего не удаляя
                                               }
                                           }
 
                                           // Гарантируем существование папки-приёмника
                                           QDir().mkpath(targetItemFolder);
 
-                                          // Хелпер копирования с учётом выбора пользователя
+                                          // --- Хелпер копирования с учётом режима ---
                                           auto copyChecked = [&](const QString &srcPath,
                                                                  const QString &dstPath,
                                                                  const QString &key) -> bool {
-                                              const bool exists = QFile::exists(dstPath);
-                                              if (exists) {
-                                                  // Если мы не в режиме "заменить всё" и файла нет в списке на замену — пропускаем
-                                                  if (!replaceAll && !filesToOverwrite.contains(key)) {
-                                                      return true;
-                                                  }
-                                                  QFile::remove(dstPath);   // иначе QFile::copy не перезапишет
+                                              // В режиме "Частично" копируем только отмеченные файлы
+                                              if (partialMode && !selectedFiles.contains(key)) {
+                                                  return true;   // пропускаем — не ошибка
+                                              }
+                                              if (QFile::exists(dstPath)) {
+                                                  QFile::remove(dstPath);
                                               }
                                               return QFile::copy(srcPath, dstPath);
                                           };
