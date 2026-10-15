@@ -40,7 +40,7 @@ public:
     // Разбор имени папки изделия вида "220.04(1-5B)_M-2.11 Хранение в нише"
     static QString parseItemArticle(const QString &folderName); // "220.04(1-5B)"
     static QString parseItemName(const QString &folderName);    // "M-2.11 Хранение в нише"
-    static int     parseItemPoints(const QString &folderName);  // 5 (из скобок)
+    static double parseItemPoints(const QString &folderName);  // 5 (из скобок)
 
 
     QVariant data(const QModelIndex &index,

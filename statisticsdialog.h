@@ -26,6 +26,7 @@ private slots:
     void onPeriodChanged(int index);
     void onExportCsvClicked();
     void onCopyClicked();
+    void onTreeDoubleClicked(const QModelIndex &index);
 
 private:
     void reloadData();
@@ -41,6 +42,10 @@ private:
     static QString pluralizePoints(int n);
     QTimer *m_searchTimer = nullptr;
     QLabel *m_totalLabel = nullptr;
+    void onItemChanged(QStandardItem *item);
+    void recalcTotals();
+    bool m_updating = false;
+    static QString formatPoints(double v);
 
 };
 

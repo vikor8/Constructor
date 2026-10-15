@@ -18,6 +18,9 @@
 #include <QColor>
 #include <QVBoxLayout>
 #include <QLabel>
+#include <QTreeView>
+#include <QInputDialog>
+#include <cmath>
 
 StatisticsDialog::StatisticsDialog(StatsDatabase *db, QWidget *parent)
     : QDialog(parent)
@@ -47,6 +50,8 @@ StatisticsDialog::StatisticsDialog(StatsDatabase *db, QWidget *parent)
         QStringLiteral("→ ТО")
     });
     ui->statsTree->setModel(m_model);
+    connect(ui->statsTree, &QTreeView::doubleClicked,
+            this, &StatisticsDialog::onTreeDoubleClicked);
     ui->statsTree->setRootIsDecorated(true);
 
     // Период
@@ -170,9 +175,14 @@ void StatisticsDialog::onRefreshClicked()
 
 void StatisticsDialog::reloadData()
 {
+    m_updating = true;
+
     m_model->removeRows(0, m_model->rowCount());
 
-    if (!m_db) return;
+    if (!m_db) {
+        m_updating = false;
+        return;
+    }
 
     const QDate   from = resolveFromDate();
     const QDate   to   = resolveToDate();
@@ -188,14 +198,14 @@ void StatisticsDialog::reloadData()
 
     const bool onlyScored = ui->onlyScoredCheck->isChecked();
 
-    // Фильтр "только с баллами" — один раз
+    // Фильтр "только с баллами"
     QList<SentRecord> filtered;
     for (const SentRecord &r : records) {
-        if (onlyScored && r.points <= 0) continue;
+        if (onlyScored && r.points <= 0.0) continue;
         filtered.append(r);
     }
 
-    // ========== Пункт 1. Заголовки колонок под режим ==========
+    // ========== Заголовки колонок под режим ==========
     if (mode == GroupMode::ByOrder) {
         m_model->setHorizontalHeaderLabels({
             QStringLiteral("Изделие"),
@@ -219,11 +229,7 @@ void StatisticsDialog::reloadData()
         });
     }
 
-    int totalItems  = 0;
-    int totalPoints = 0;
-    int totalOrders = 0;
-
-    // ========== Пункт 2. Заглушка при пустой выборке ==========
+    // ========== Заглушка при пустой выборке ==========
     if (filtered.isEmpty()) {
         m_model->setHorizontalHeaderLabels({
             QStringLiteral("Результат"),
@@ -249,7 +255,6 @@ void StatisticsDialog::reloadData()
         });
         ui->statsTree->setFirstColumnSpanned(0, QModelIndex(), true);
 
-        // Обнуляем сводку
         ui->labelOrdersValue->setText(QStringLiteral("0"));
         ui->labelItemsValue->setText(QStringLiteral("0"));
         ui->labelPointsValue->setText(QStringLiteral("0"));
@@ -262,10 +267,10 @@ void StatisticsDialog::reloadData()
             periodStr = QStringLiteral("всё время");
         ui->labelPeriodValue->setText(periodStr);
 
-        // Итоговая строка под таблицей
         m_totalLabel->setText(
             QStringLiteral("Итого:  0 заказов  ·  0 изделий  ·  0 баллов"));
 
+        m_updating = false;
         return;
     }
 
@@ -280,10 +285,9 @@ void StatisticsDialog::reloadData()
             const QString &orderNum = it.key();
             const QList<SentRecord> &list = it.value();
 
-            int orderPoints = 0;
+            double orderPoints = 0.0;
             for (const SentRecord &r : list) orderPoints += r.points;
 
-            // Родительская строка — «Заказ № N»
             QStandardItem *orderItem = new QStandardItem(
                 QStringLiteral("Заказ № %1").arg(orderNum));
             orderItem->setEditable(false);
@@ -294,21 +298,19 @@ void StatisticsDialog::reloadData()
             orderCount->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
             QStandardItem *orderPointsItem = new QStandardItem(
-                QString::number(orderPoints));
+                formatPoints(orderPoints));
             orderPointsItem->setEditable(false);
             orderPointsItem->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
             QStandardItem *orderEmpty = new QStandardItem();
             orderEmpty->setEditable(false);
 
-            // Жирный шрифт для родительской строки
             QFont bold = orderItem->font();
             bold.setBold(true);
             orderItem->setFont(bold);
             orderCount->setFont(bold);
             orderPointsItem->setFont(bold);
 
-            // Дочерние строки — изделия
             for (const SentRecord &r : list) {
                 QStandardItem *art = new QStandardItem(r.article);
                 art->setEditable(false);
@@ -316,20 +318,19 @@ void StatisticsDialog::reloadData()
                 QStandardItem *nm = new QStandardItem(r.name);
                 nm->setEditable(false);
 
-                QStandardItem *pt = new QStandardItem(QString::number(r.points));
+                QStandardItem *pt = new QStandardItem(formatPoints(r.points));
                 pt->setEditable(false);
                 pt->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+                pt->setData(r.id,     Qt::UserRole);      // id записи в БД
+                pt->setData(r.points, Qt::UserRole + 1);  // старое значение (double)
+                pt->setToolTip(QStringLiteral("Двойной клик — изменить баллы"));
 
-                // Пункт: дата без времени
                 QStandardItem *dt = new QStandardItem(
                     r.sentAt.toString("dd.MM.yyyy"));
                 dt->setEditable(false);
 
                 orderItem->appendRow({ art, nm, pt, dt });
-                totalItems++;
-                totalPoints += r.points;
             }
-            totalOrders++;
             m_model->appendRow({ orderItem, orderCount, orderPointsItem, orderEmpty });
         }
     }
@@ -340,18 +341,16 @@ void StatisticsDialog::reloadData()
         for (const SentRecord &r : filtered)
             byDate[r.sentAt.date()].append(r);
 
-        // Сортируем даты — от новых к старым
         QList<QDate> dates = byDate.keys();
         std::sort(dates.begin(), dates.end(), std::greater<QDate>());
 
         for (const QDate &d : dates) {
             const QList<SentRecord> &list = byDate.value(d);
 
-            int dayPoints = 0;
+            double dayPoints = 0.0;
             for (const SentRecord &r : list) dayPoints += r.points;
 
-            QStandardItem *dayItem = new QStandardItem(
-                d.toString("dd.MM.yyyy"));
+            QStandardItem *dayItem = new QStandardItem(d.toString("dd.MM.yyyy"));
             dayItem->setEditable(false);
 
             QStandardItem *dayCount = new QStandardItem(
@@ -360,7 +359,7 @@ void StatisticsDialog::reloadData()
             dayCount->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
             QStandardItem *dayPointsItem = new QStandardItem(
-                QString::number(dayPoints));
+                formatPoints(dayPoints));
             dayPointsItem->setEditable(false);
             dayPointsItem->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
@@ -380,20 +379,19 @@ void StatisticsDialog::reloadData()
                 QStandardItem *nm = new QStandardItem(r.name);
                 nm->setEditable(false);
 
-                QStandardItem *pt = new QStandardItem(QString::number(r.points));
+                QStandardItem *pt = new QStandardItem(formatPoints(r.points));
                 pt->setEditable(false);
                 pt->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+                pt->setData(r.id,     Qt::UserRole);
+                pt->setData(r.points, Qt::UserRole + 1);
+                pt->setToolTip(QStringLiteral("Двойной клик — изменить баллы"));
 
-                // В режиме "По дате" во второй колонке показываем время
                 QStandardItem *dt = new QStandardItem(
-                    r.sentAt.toString("dd.MM.yyyy HH:mm"));
+                    r.sentAt.toString("HH:mm"));
                 dt->setEditable(false);
 
                 dayItem->appendRow({ art, nm, pt, dt });
-                totalItems++;
-                totalPoints += r.points;
             }
-            totalOrders++;
             m_model->appendRow({ dayItem, dayCount, dayPointsItem, dayEmpty });
         }
     }
@@ -407,19 +405,19 @@ void StatisticsDialog::reloadData()
                 r.article + "  " + r.name);
             nameAndArticle->setEditable(false);
 
-            QStandardItem *pt = new QStandardItem(QString::number(r.points));
+            QStandardItem *pt = new QStandardItem(formatPoints(r.points));
             pt->setEditable(false);
             pt->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            pt->setData(r.id,     Qt::UserRole);
+            pt->setData(r.points, Qt::UserRole + 1);
+            pt->setToolTip(QStringLiteral("Двойной клик — изменить баллы"));
 
             QStandardItem *dt = new QStandardItem(
                 r.sentAt.toString("dd.MM.yyyy"));
             dt->setEditable(false);
 
             m_model->appendRow({ order, nameAndArticle, pt, dt });
-            totalItems++;
-            totalPoints += r.points;
         }
-        totalOrders = 1;   // всё в одном списке
     }
 
     // Раскрыть все группы
@@ -436,11 +434,7 @@ void StatisticsDialog::reloadData()
     ui->statsTree->setColumnWidth(2, 70);
     ui->statsTree->setColumnWidth(3, 150);
 
-    // --- Обновляем сводку внизу окна ---
-    ui->labelOrdersValue->setText(QString::number(totalOrders));
-    ui->labelItemsValue->setText(QString::number(totalItems));
-    ui->labelPointsValue->setText(QString::number(totalPoints));
-
+    // Период
     QString periodStr;
     if (from.isValid() && to.isValid())
         periodStr = QString("%1 — %2")
@@ -454,23 +448,9 @@ void StatisticsDialog::reloadData()
         periodStr = QStringLiteral("всё время");
     ui->labelPeriodValue->setText(periodStr);
 
-    // ========== Пункт 4. Итоговая строка под таблицей ==========
-    QString ordersLabel;
-    if (mode == GroupMode::ByDate)
-        ordersLabel = QString("%1 %2")
-                          .arg(totalOrders)
-                          .arg(pluralizeDays(totalOrders));
-    else
-        ordersLabel = QString("%1 %2")
-                          .arg(totalOrders)
-                          .arg(pluralizeOrders(totalOrders));
-
-    m_totalLabel->setText(
-        QStringLiteral("Итого:  %1  ·  %2  ·  %3 %4")
-            .arg(ordersLabel,
-                 pluralizeItems(totalItems),
-                 QString::number(totalPoints),
-                 pluralizePoints(totalPoints)));
+    // Итоги: заказы, изделия, баллы + строка "Итого: ..."
+    m_updating = false;
+    recalcTotals();
 }
 
 QString StatisticsDialog::pluralizeItems(int n)
@@ -588,4 +568,168 @@ QString StatisticsDialog::pluralizePoints(int n)
     if (d == 1)               return QStringLiteral("балл");
     if (d >= 2 && d <= 4)     return QStringLiteral("балла");
     return QStringLiteral("баллов");
+}
+
+void StatisticsDialog::onItemChanged(QStandardItem *item)
+{
+    if (!item || m_updating) return;
+    if (item->column() != 2) return;
+
+    QStandardItem *parent = item->parent();
+
+    const int recordId = item->data(Qt::UserRole).toInt();
+    if (recordId <= 0) return;
+
+    bool ok = false;
+    const int newPoints = item->text().trimmed().toInt(&ok);
+    const int oldPoints = item->data(Qt::UserRole + 1).toInt();
+
+    if (!ok || newPoints < 0 || newPoints > 9999) {
+        QMessageBox::warning(this, QStringLiteral("Некорректное значение"),
+                             QStringLiteral("Введите целое число от 0 до 9999."));
+        m_updating = true;
+        item->setText(QString::number(oldPoints));
+        m_updating = false;
+        return;
+    }
+
+    if (newPoints == oldPoints) return;
+
+    if (!m_db->updateSentPoints(recordId, newPoints)) {
+        QMessageBox::warning(this, QStringLiteral("Ошибка"),
+                             QStringLiteral("Не удалось сохранить баллы в БД."));
+        m_updating = true;
+        item->setText(QString::number(oldPoints));
+        m_updating = false;
+        return;
+    }
+
+    m_updating = true;
+    item->setData(newPoints, Qt::UserRole + 1);
+
+    if (parent) {
+        int groupPoints = 0;
+        for (int j = 0; j < parent->rowCount(); ++j) {
+            if (QStandardItem *ptCell = parent->child(j, 2))
+                groupPoints += ptCell->text().toInt();
+        }
+
+        const QModelIndex parentIdx       = parent->index();
+        const QModelIndex parentPointsIdx = parentIdx.siblingAtColumn(2);
+
+        if (QStandardItem *parentPointsCell = m_model->itemFromIndex(parentPointsIdx)) {
+            parentPointsCell->setText(QString::number(groupPoints));
+        }
+    }
+    m_updating = false;
+
+    recalcTotals();
+}
+
+void StatisticsDialog::recalcTotals()
+{
+    int    totalOrders = 0;
+    int    totalItems  = 0;
+    double totalPoints = 0.0;
+
+    for (int i = 0; i < m_model->rowCount(); ++i) {
+        QStandardItem *firstCol = m_model->item(i, 0);
+        if (!firstCol) continue;
+
+        if (firstCol->rowCount() > 0) {
+            totalOrders++;
+            for (int j = 0; j < firstCol->rowCount(); ++j) {
+                QStandardItem *ptCell = firstCol->child(j, 2);
+                if (!ptCell) continue;
+                totalItems++;
+                totalPoints += ptCell->text().toDouble();
+            }
+        } else {
+            QStandardItem *ptCell = m_model->item(i, 2);
+            if (!ptCell) continue;
+            if (ptCell->data(Qt::UserRole).toInt() <= 0) continue;
+            totalItems++;
+            totalPoints += ptCell->text().toDouble();
+        }
+    }
+
+    ui->labelOrdersValue->setText(QString::number(totalOrders));
+    ui->labelItemsValue->setText(QString::number(totalItems));
+    ui->labelPointsValue->setText(formatPoints(totalPoints));
+
+    QString ordersLabel;
+    if (ui->radioByDate->isChecked())
+        ordersLabel = QString("%1 %2").arg(totalOrders).arg(pluralizeDays(totalOrders));
+    else
+        ordersLabel = QString("%1 %2").arg(totalOrders).arg(pluralizeOrders(totalOrders));
+
+    m_totalLabel->setText(
+        QStringLiteral("Итого:  %1  ·  %2  ·  %3 %4")
+            .arg(ordersLabel,
+                 pluralizeItems(totalItems),
+                 formatPoints(totalPoints),
+                 pluralizePoints(static_cast<int>(std::round(totalPoints)))));
+}
+
+void StatisticsDialog::onTreeDoubleClicked(const QModelIndex &index)
+{
+    if (!index.isValid()) return;
+    if (index.column() != 2) return;
+
+    QStandardItem *item = m_model->itemFromIndex(index);
+    if (!item) return;
+
+    const int recordId = item->data(Qt::UserRole).toInt();
+    if (recordId <= 0) return;
+
+    const double oldPoints = item->data(Qt::UserRole + 1).toDouble();
+
+    bool ok = false;
+    const double newPoints = QInputDialog::getDouble(
+        this,
+        QStringLiteral("Изменение баллов"),
+        QStringLiteral("Введите новое количество баллов:"),
+        oldPoints,
+        0.0,         // минимум
+        9999.0,      // максимум
+        1,           // число знаков после точки
+        &ok);
+
+    if (!ok || qAbs(newPoints - oldPoints) < 0.0001) return;
+
+    if (!m_db->updateSentPoints(recordId, newPoints)) {
+        QMessageBox::warning(this, QStringLiteral("Ошибка"),
+                             QStringLiteral("Не удалось сохранить баллы в БД."));
+        return;
+    }
+
+    m_updating = true;
+    item->setData(formatPoints(newPoints), Qt::DisplayRole);
+    item->setData(newPoints, Qt::UserRole + 1);
+
+    if (QStandardItem *parent = item->parent()) {
+        double groupPoints = 0.0;
+        for (int j = 0; j < parent->rowCount(); ++j) {
+            if (QStandardItem *ptCell = parent->child(j, 2)) {
+                // Формат "5.5" или "5" — toDouble() справится
+                groupPoints += ptCell->text().toDouble();
+            }
+        }
+        const QModelIndex parentIdx       = parent->index();
+        const QModelIndex parentPointsIdx = parentIdx.siblingAtColumn(2);
+        if (QStandardItem *parentPointsCell = m_model->itemFromIndex(parentPointsIdx)) {
+            parentPointsCell->setData(formatPoints(groupPoints), Qt::DisplayRole);
+        }
+    }
+    m_updating = false;
+
+    recalcTotals();
+}
+
+QString StatisticsDialog::formatPoints(double v)
+{
+    // Целые показываем без .0, дробные — с одним знаком
+    if (qAbs(v - std::round(v)) < 0.001)
+        return QString::number(static_cast<qlonglong>(std::round(v)));
+    return QString::number(v, 'f', 1);
 }

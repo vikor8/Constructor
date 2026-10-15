@@ -157,7 +157,7 @@ int StatsDatabase::getTotalTime(const QString &itemNumber, bool isSketch)
 bool StatsDatabase::recordSentToTO(const QString &article,
                                    const QString &name,
                                    const QString &orderNumber,
-                                   int points)
+                                   double points)
 {
     QSqlQuery q(m_db);
     q.prepare("INSERT INTO sent_to_to "
@@ -166,7 +166,7 @@ bool StatsDatabase::recordSentToTO(const QString &article,
     q.addBindValue(article);
     q.addBindValue(name);
     q.addBindValue(orderNumber);
-    q.addBindValue(points);
+    q.addBindValue(points);        // QVariant сам подберёт тип (double)
     return q.exec();
 }
 
@@ -212,7 +212,7 @@ QList<SentRecord> StatsDatabase::findSentRecords(const QDate &from,
             r.article     = q.value(1).toString();
             r.name        = q.value(2).toString();
             r.orderNumber = q.value(3).toString();
-            r.points      = q.value(4).toInt();
+            r.points = q.value(4).toDouble();
             r.sentAt      = q.value(5).toDateTime();
             list.append(r);
         }
@@ -221,4 +221,19 @@ QList<SentRecord> StatsDatabase::findSentRecords(const QDate &from,
     }
 
     return list;
+}
+
+bool StatsDatabase::updateSentPoints(int id, double newPoints)
+{
+    if (id <= 0) return false;
+
+    QSqlQuery q(m_db);
+    q.prepare("UPDATE sent_to_to SET points = ? WHERE id = ?");
+    q.addBindValue(newPoints);
+    q.addBindValue(id);
+    if (!q.exec()) {
+        qWarning() << "updateSentPoints failed:" << q.lastError().text();
+        return false;
+    }
+    return true;
 }

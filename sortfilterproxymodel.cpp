@@ -249,12 +249,16 @@ QString CustomSortProxyModel::parseItemName(const QString &folderName)
     return rest.trimmed();
 }
 
-int CustomSortProxyModel::parseItemPoints(const QString &folderName)
+double CustomSortProxyModel::parseItemPoints(const QString &folderName)
 {
+    // Ищем "-(число)" внутри скобок. Поддерживаем и точку, и запятую.
     static const QRegularExpression re(
-        QStringLiteral("\\([^)]*?-(\\d+)[^0-9)]*?\\)"));
+        QStringLiteral("\\([^)]*?-(\\d+(?:[.,]\\d+)?)"));
     const QRegularExpressionMatch m = re.match(folderName);
-    if (m.hasMatch())
-        return m.captured(1).toInt();
-    return 0;
+    if (m.hasMatch()) {
+        QString num = m.captured(1);
+        num.replace(',', '.');            // "5,5" → "5.5"
+        return num.toDouble();
+    }
+    return 0.0;
 }
