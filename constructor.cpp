@@ -1281,7 +1281,7 @@ void Constructor::copyToTOFolder()
                                               const QString article  = CustomSortProxyModel::parseItemArticle(itemFolderName);
                                               const QString name     = CustomSortProxyModel::parseItemName(itemFolderName);
                                               const QString orderNum = CustomSortProxyModel::extractOrderNumber(itemFolderName);
-                                              const int     points   = CustomSortProxyModel::parseItemPoints(itemFolderName);
+                                              const double  points   = CustomSortProxyModel::parseItemPoints(itemFolderName);
 
                                               if (!article.isEmpty()) {
                                                   if (!m_statsDb->recordSentToTO(article, name, orderNum, points)) {
