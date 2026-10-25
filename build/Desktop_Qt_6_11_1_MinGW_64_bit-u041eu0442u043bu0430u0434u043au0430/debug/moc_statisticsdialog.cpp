@@ -38,10 +38,32 @@ template <> constexpr inline auto StatisticsDialog::qt_create_metaobjectdata<qt_
 {
     namespace QMC = QtMocConstants;
     QtMocHelpers::StringRefStorage qt_stringData {
-        "StatisticsDialog"
+        "StatisticsDialog",
+        "onRefreshClicked",
+        "",
+        "onPeriodChanged",
+        "index",
+        "onExportCsvClicked",
+        "onCopyClicked",
+        "onTreeDoubleClicked",
+        "QModelIndex"
     };
 
     QtMocHelpers::UintData qt_methods {
+        // Slot 'onRefreshClicked'
+        QtMocHelpers::SlotData<void()>(1, 2, QMC::AccessPrivate, QMetaType::Void),
+        // Slot 'onPeriodChanged'
+        QtMocHelpers::SlotData<void(int)>(3, 2, QMC::AccessPrivate, QMetaType::Void, {{
+            { QMetaType::Int, 4 },
+        }}),
+        // Slot 'onExportCsvClicked'
+        QtMocHelpers::SlotData<void()>(5, 2, QMC::AccessPrivate, QMetaType::Void),
+        // Slot 'onCopyClicked'
+        QtMocHelpers::SlotData<void()>(6, 2, QMC::AccessPrivate, QMetaType::Void),
+        // Slot 'onTreeDoubleClicked'
+        QtMocHelpers::SlotData<void(const QModelIndex &)>(7, 2, QMC::AccessPrivate, QMetaType::Void, {{
+            { 0x80000000 | 8, 4 },
+        }}),
     };
     QtMocHelpers::UintData qt_properties {
     };
@@ -63,10 +85,16 @@ Q_CONSTINIT const QMetaObject StatisticsDialog::staticMetaObject = { {
 void StatisticsDialog::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, void **_a)
 {
     auto *_t = static_cast<StatisticsDialog *>(_o);
-    (void)_t;
-    (void)_c;
-    (void)_id;
-    (void)_a;
+    if (_c == QMetaObject::InvokeMetaMethod) {
+        switch (_id) {
+        case 0: _t->onRefreshClicked(); break;
+        case 1: _t->onPeriodChanged((*reinterpret_cast<std::add_pointer_t<int>>(_a[1]))); break;
+        case 2: _t->onExportCsvClicked(); break;
+        case 3: _t->onCopyClicked(); break;
+        case 4: _t->onTreeDoubleClicked((*reinterpret_cast<std::add_pointer_t<QModelIndex>>(_a[1]))); break;
+        default: ;
+        }
+    }
 }
 
 const QMetaObject *StatisticsDialog::metaObject() const
@@ -85,6 +113,18 @@ void *StatisticsDialog::qt_metacast(const char *_clname)
 int StatisticsDialog::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
 {
     _id = QDialog::qt_metacall(_c, _id, _a);
+    if (_id < 0)
+        return _id;
+    if (_c == QMetaObject::InvokeMetaMethod) {
+        if (_id < 5)
+            qt_static_metacall(this, _c, _id, _a);
+        _id -= 5;
+    }
+    if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
+        if (_id < 5)
+            *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType();
+        _id -= 5;
+    }
     return _id;
 }
 QT_WARNING_POP

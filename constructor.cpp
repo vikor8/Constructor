@@ -113,6 +113,13 @@ Constructor::Constructor(QWidget *parent)
     connect(toggleToolbar2Action, &QAction::toggled,
             this, &Constructor::toggleToolbar2Visibility);
 
+    // Новая галочка для панели заказов
+    QAction *toggleHistoryAction = viewMenu->addAction("Кнопки последних заказов");
+    toggleHistoryAction->setCheckable(true);
+    toggleHistoryAction->setChecked(m_showHistoryButtons);
+    connect(toggleHistoryAction, &QAction::toggled,
+            this, &Constructor::toggleHistoryButtonsVisibility);
+
     QPushButton *statsButton = new QPushButton("Статистика", this);
     statsButton->setFlat(true);
     statsButton->setCursor(Qt::PointingHandCursor);
@@ -125,6 +132,15 @@ Constructor::Constructor(QWidget *parent)
 
     // Устанавливаем менюбар
     setMenuBar(menuBar);
+
+    // ================== ПАНЕЛЬ ПОСЛЕДНИХ ЗАКАЗОВ ==================
+    m_historyToolBar = new QToolBar("Последние заказы", this);
+    m_historyToolBar->setMovable(false);
+    m_historyToolBar->setFloatable(false);
+    m_historyToolBar->setStyleSheet("QToolBar { border: none; padding: 2px; }");
+
+    // Добавляем панель в верхнюю область (она автоматически встанет под меню)
+    addToolBar(Qt::TopToolBarArea, m_historyToolBar);
 
     // ======================= ТУЛБАР 1: ЗАКАЗЫ =======================
     QToolBar *tbar = new QToolBar("Панель заказов", this);
@@ -232,6 +248,7 @@ Constructor::Constructor(QWidget *parent)
     // ======================= ЗАГОЛОВОК И СТАТУСБАР =======================
     setWindowTitle("Constructor - Управление заказами");
     statusBar()->showMessage("Ctrl+Клик - открыть в проводнике | Клик по заголовку - сортировка | Двойной клик - открыть файл");
+    updateOrderCombo();
 }
 
 void Constructor::updateHighlightMode(const QString &currentPath)
@@ -1450,6 +1467,8 @@ void Constructor::loadSettings()
     m_showToolbar1 = m_settings.value("view_show_toolbar1", true).toBool();
     m_showToolbar2 = m_settings.value("view_show_toolbar2", true).toBool();
 
+    m_settings.setValue("view_show_history_buttons", m_showHistoryButtons);
+
 }
 
 void Constructor::saveSettings()
@@ -1670,12 +1689,47 @@ void Constructor::showHistorySettingsDialog()
 void Constructor::updateOrderCombo()
 {
     if (!m_orderCombo) return;
-    qDebug() << "updateOrderCombo: maxHistoryDisplay=" << m_maxHistoryDisplay
-             << "orderHistory size=" << m_orderHistory.size();
+
     m_orderCombo->clear();
+
+    // Очищаем старые кнопки на панели (если панель уже создана)
+    if (m_historyToolBar) {
+        m_historyToolBar->clear();
+    }
+
     int count = qMin(m_maxHistoryDisplay, m_orderHistory.size());
     for (int i = 0; i < count; ++i) {
-        m_orderCombo->addItem(m_orderHistory.at(i));
+        const QString orderNum = m_orderHistory.at(i);
+
+        // 1. Добавляем в комбобокс
+        m_orderCombo->addItem(orderNum);
+
+        // 2. Добавляем кнопку в панель
+        if (m_historyToolBar) {
+            QPushButton *btn = new QPushButton(orderNum, m_historyToolBar);
+            btn->setFlat(true); // Делаем вид "просто текста" без рамки
+            btn->setCursor(Qt::PointingHandCursor);
+            btn->setFocusPolicy(Qt::NoFocus);
+
+            // Стилизуем, чтобы при наведении подсвечивалось как меню
+            btn->setStyleSheet(
+                "QPushButton { border: none; padding: 4px 8px; background: transparent; }"
+                "QPushButton:hover { background: palette(highlight); color: palette(highlighted-text); }"
+                );
+
+            // Клик по кнопке: устанавливаем заказ в комбо и вызываем функцию чертежей
+            connect(btn, &QPushButton::clicked, this, [this, orderNum]() {
+                m_orderCombo->setCurrentText(orderNum);
+                openDrawingsFolder();
+            });
+
+            m_historyToolBar->addWidget(btn);
+        }
+    }
+
+    // Если кнопок нет, прячем панель
+    if (m_historyToolBar) {
+        m_historyToolBar->setVisible(m_showHistoryButtons && count > 0);
     }
 }
 
@@ -1867,4 +1921,14 @@ void Constructor::openStatisticsDialog()
 {
     StatisticsDialog dlg(m_statsDb, this);
     dlg.exec();
+}
+
+void Constructor::toggleHistoryButtonsVisibility(bool visible)
+{
+    m_showHistoryButtons = visible;
+    if (m_historyToolBar) {
+        // Показываем только если есть что показывать (visible && есть заказы)
+        m_historyToolBar->setVisible(visible && m_orderCombo->count() > 0);
+    }
+    saveSettings();
 }

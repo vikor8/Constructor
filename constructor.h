@@ -17,6 +17,7 @@
 #include <QTimer>
 #include <QElapsedTimer>
 #include <QLabel>
+#include <QToolBar>
 
 #include "sortfilterproxymodel.h"
 #include "statsdatabase.h"
@@ -66,6 +67,7 @@ private slots:
     void toggleToolbar1Visibility(bool visible);
     void toggleToolbar2Visibility(bool visible);
     void openStatisticsDialog();
+    void toggleHistoryButtonsVisibility(bool visible);
 
 private:
     void loadSettings();
@@ -96,6 +98,9 @@ private:
     bool m_showStats    = true;
     bool m_showToolbar1 = true;
     bool m_showToolbar2 = true;
+
+    QToolBar *m_historyToolBar = nullptr;
+    bool m_showHistoryButtons = true;
 
     // Статистика и таймер
     StatsDatabase *m_statsDb;

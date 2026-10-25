@@ -185,6 +185,16 @@ public:
 
         statsTree = new QTreeView(StatisticsDialog);
         statsTree->setObjectName("statsTree");
+        statsTree->setStyleSheet(QString::fromUtf8("QTreeView {\n"
+"    gridline-color: #d0d0d0;\n"
+"    show-decoration-selected: 1;\n"
+"}\n"
+"\n"
+"QTreeView::item {\n"
+"    border-right: 1px solid #d0d0d0;\n"
+"    border-bottom: 1px solid #d0d0d0;\n"
+"    padding: 4px 6px;\n"
+"}"));
         statsTree->setEditTriggers(QAbstractItemView::EditTrigger::NoEditTriggers);
         statsTree->setAlternatingRowColors(true);
         statsTree->setUniformRowHeights(true);
