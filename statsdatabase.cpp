@@ -12,11 +12,22 @@ StatsDatabase::~StatsDatabase() {
     if (m_db.isOpen()) m_db.close();
 }
 
-bool StatsDatabase::init(const QString &dbPath) {
-    m_db = QSqlDatabase::addDatabase("QSQLITE", "stats_connection");
+bool StatsDatabase::init(const QString &dbPath)
+{
+    // Если соединение с таким именем уже есть — закрываем и переиспользуем его
+    if (QSqlDatabase::contains("stats_connection")) {
+        m_db = QSqlDatabase::database("stats_connection");
+        if (m_db.isOpen()) {
+            m_db.close();
+        }
+    } else {
+        m_db = QSqlDatabase::addDatabase("QSQLITE", "stats_connection");
+    }
+
     m_db.setDatabaseName(dbPath);
     if (!m_db.open()) {
-        qWarning() << "Cannot open stats database:" << m_db.lastError().text();
+        qWarning() << "Cannot open stats database:" << m_db.lastError().text()
+        << "path:" << dbPath;
         return false;
     }
     return createTables();

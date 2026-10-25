@@ -43,7 +43,7 @@ private slots:
     void selectDrawingsFolder();
     void selectAdvertisingFolder();
     void selectGlassFolder();
-    void selectDatabaseFolder();
+    void selectDatabaseFile();
     void exitApplication();
     void openOrderFolder();
     void openDrawingsFolder();
@@ -88,7 +88,7 @@ private:
     QString m_drawingsFolder;
     QString m_advertisingFolder;
     QString m_glassFolder;
-    QString m_databaseFolder;
+    QString m_databasePath;
 
     QComboBox *m_orderCombo;
     QLineEdit *m_productLineEdit;

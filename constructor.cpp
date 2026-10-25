@@ -72,7 +72,7 @@ Constructor::Constructor(QWidget *parent)
     QAction *drawingsFolderAction = fileMenu->addAction("Папка Чертежи");
     QAction *advertisingFolderAction = fileMenu->addAction("Реклама");
     QAction *glassFolderAction = fileMenu->addAction("Цех стекла");
-    QAction *databaseFolderAction = fileMenu->addAction("База данных");
+   QAction *databaseFileAction = fileMenu->addAction("Файл базы данных...");
     fileMenu->addSeparator();
     QAction *sortSettingsAction = fileMenu->addAction("Сортировка");
     QAction *historySettingsAction = fileMenu->addAction("Настройка истории заказов");
@@ -84,7 +84,7 @@ Constructor::Constructor(QWidget *parent)
     connect(drawingsFolderAction, &QAction::triggered, this, &Constructor::selectDrawingsFolder);
     connect(advertisingFolderAction, &QAction::triggered, this, &Constructor::selectAdvertisingFolder);
     connect(glassFolderAction, &QAction::triggered, this, &Constructor::selectGlassFolder);
-    connect(databaseFolderAction, &QAction::triggered, this, &Constructor::selectDatabaseFolder);
+   connect(databaseFileAction, &QAction::triggered, this, &Constructor::selectDatabaseFile);
     connect(sortSettingsAction, &QAction::triggered, this, &Constructor::showSortSettingsDialog);
     connect(historySettingsAction, &QAction::triggered, this, &Constructor::showHistorySettingsDialog);
     connect(exitAction, &QAction::triggered, this, &Constructor::exitApplication);
@@ -229,9 +229,25 @@ Constructor::Constructor(QWidget *parent)
     m_timerRunning = false;
     m_isSketchMode = true;
     m_statsDb = new StatsDatabase(this);
-    QString dbPath = QCoreApplication::applicationDirPath() + "/workstats.db";
+
+    QString dbPath;
+    // Если путь задан и файл по этому пути существует — грузим его
+    if (!m_databasePath.isEmpty() && QFileInfo::exists(m_databasePath)) {
+        dbPath = m_databasePath;
+    } else {
+        // Иначе — по умолчанию рядом с exe
+        dbPath = QCoreApplication::applicationDirPath() + "/workstats.db";
+        m_databasePath = dbPath; // сохраним дефолтный путь в переменную
+    }
+
     if (!m_statsDb->init(dbPath)) {
-        QMessageBox::critical(this, "Ошибка БД", "Не удалось открыть базу статистики.");
+        QMessageBox::critical(this, "Ошибка БД",
+                              QString("Не удалось открыть базу статистики:\n%1").arg(dbPath));
+    }
+
+    if (!m_statsDb->init(dbPath)) {
+        QMessageBox::critical(this, "Ошибка БД",
+                              QString("Не удалось открыть базу статистики:\n%1").arg(dbPath));
     }
 
     m_displayTimer = new QTimer(this);
@@ -1427,19 +1443,34 @@ void Constructor::selectGlassFolder()
 }
 
 // Выбор папки База данных
-void Constructor::selectDatabaseFolder()
+void Constructor::selectDatabaseFile()
 {
-    QString folder = QFileDialog::getExistingDirectory(
+    // Стартовая директория: текущая папка с БД или папка с программой
+    QString startPath = m_databasePath.isEmpty()
+                            ? QCoreApplication::applicationDirPath()
+                            : m_databasePath;
+
+    QString filePath = QFileDialog::getOpenFileName(
         this,
-        "Выберите папку База данных",
-        m_databaseFolder.isEmpty() ? QDir::homePath() : m_databaseFolder,
-        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks
+        "Выберите файл базы данных SQLite",
+        startPath,
+        "SQLite Database (*.db *.sqlite *.sqlite3);;All Files (*)"
         );
 
-    if (!folder.isEmpty()) {
-        m_databaseFolder = folder;
-        saveSettings();
-        QMessageBox::information(this, "Информация", "Папка База данных успешно выбрана!");
+    if (filePath.isEmpty()) return;   // пользователь отменил выбор
+
+    m_databasePath = filePath;
+    saveSettings();
+
+    if (m_statsDb->init(m_databasePath)) {
+        QMessageBox::information(
+            this, "База данных подключена",
+            QString("Успешно подключена база данных:\n%1").arg(m_databasePath));
+    } else {
+        QMessageBox::critical(
+            this, "Ошибка",
+            QString("Не удалось открыть базу данных:\n%1\n\n"
+                    "Проверьте, что файл существует и доступен для записи.").arg(m_databasePath));
     }
 }
 
@@ -1454,7 +1485,7 @@ void Constructor::loadSettings()
     m_drawingsFolder = m_settings.value("drawings_folder", "").toString();
     m_advertisingFolder = m_settings.value("advertising_folder", "").toString();
     m_glassFolder = m_settings.value("glass_folder", "").toString();
-    m_databaseFolder = m_settings.value("database_folder", "").toString();
+    m_databasePath = m_settings.value("database_file", "").toString();
 
     // История заказов
     m_orderHistory = m_settings.value("order_history").toStringList();
@@ -1477,7 +1508,7 @@ void Constructor::saveSettings()
     m_settings.setValue("drawings_folder", m_drawingsFolder);
     m_settings.setValue("advertising_folder", m_advertisingFolder);
     m_settings.setValue("glass_folder", m_glassFolder);
-    m_settings.setValue("database_folder", m_databaseFolder);
+    m_settings.setValue("database_file", m_databasePath);
 
     m_settings.setValue("order_history", m_orderHistory);
     m_settings.setValue("history_display_count", m_maxHistoryDisplay);
