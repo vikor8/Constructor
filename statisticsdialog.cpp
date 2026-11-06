@@ -21,6 +21,9 @@
 #include <QTreeView>
 #include <QInputDialog>
 #include <cmath>
+#include "sortfilterproxymodel.h"
+#include <QFormLayout>
+#include <QLineEdit>
 
 StatisticsDialog::StatisticsDialog(StatsDatabase *db, QWidget *parent)
     : QDialog(parent)
@@ -100,6 +103,7 @@ StatisticsDialog::StatisticsDialog(StatsDatabase *db, QWidget *parent)
             this, &StatisticsDialog::onExportCsvClicked);
     connect(ui->copyButton, &QPushButton::clicked,
             this, &StatisticsDialog::onCopyClicked);
+    connect(ui->addItemButton, &QPushButton::clicked, this, &StatisticsDialog::onAddItemClicked);
 
     // Первичная загрузка
     reloadData();
@@ -732,4 +736,59 @@ QString StatisticsDialog::formatPoints(double v)
     if (qAbs(v - std::round(v)) < 0.001)
         return QString::number(static_cast<qlonglong>(std::round(v)));
     return QString::number(v, 'f', 1);
+}
+
+void StatisticsDialog::onAddItemClicked()
+{
+    // Создаём диалог для ввода
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Добавление изделия"));
+    dlg.setMinimumWidth(450);
+    QVBoxLayout *lay = new QVBoxLayout(&dlg);
+    QFormLayout *form = new QFormLayout();
+
+    QLineEdit *artEdit = new QLineEdit(&dlg);
+    artEdit->setPlaceholderText(QStringLiteral("Например: 223.04(2-7B)"));
+
+    QLineEdit *nameEdit = new QLineEdit(&dlg);
+    nameEdit->setPlaceholderText(QStringLiteral("Например: Стеллаж офисный"));
+
+    form->addRow(QStringLiteral("Артикул (с баллами):"), artEdit);
+    form->addRow(QStringLiteral("Наименование:"), nameEdit);
+    lay->addLayout(form);
+
+    QDialogButtonBox *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    lay->addWidget(bb);
+
+    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    const QString article = artEdit->text().trimmed();
+    const QString name    = nameEdit->text().trimmed();
+
+    if (article.isEmpty()) {
+        QMessageBox::warning(this, "Ошибка", "Артикул не может быть пустым.");
+        return;
+    }
+
+    // Используем наши парсеры из CustomSortProxyModel
+    const QString orderNum = CustomSortProxyModel::extractOrderNumber(article);
+    const double  points   = CustomSortProxyModel::parseItemPoints(article);
+
+    if (orderNum.isEmpty()) {
+        QMessageBox::warning(this, "Ошибка", "Не удалось определить номер заказа из артикула.\n"
+                                             "Артикул должен начинаться с цифр (например, 223.04).");
+        return;
+    }
+
+    // Записываем в БД (дата установится автоматически текущая)
+    if (m_db->recordSentToTO(article, name, orderNum, points)) {
+        QMessageBox::information(this, "Успех", QString("Изделие '%1' успешно добавлено.").arg(article));
+        reloadData(); // Обновляем таблицу
+    } else {
+        QMessageBox::critical(this, "Ошибка", "Не удалось добавить изделие в базу данных.");
+    }
 }

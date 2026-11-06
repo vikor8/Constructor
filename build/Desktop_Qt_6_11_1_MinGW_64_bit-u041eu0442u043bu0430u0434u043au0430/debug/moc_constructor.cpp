@@ -45,7 +45,7 @@ template <> constexpr inline auto Constructor::qt_create_metaobjectdata<qt_meta_
         "selectDrawingsFolder",
         "selectAdvertisingFolder",
         "selectGlassFolder",
-        "selectDatabaseFolder",
+        "selectDatabaseFile",
         "exitApplication",
         "openOrderFolder",
         "openDrawingsFolder",
@@ -87,7 +87,7 @@ template <> constexpr inline auto Constructor::qt_create_metaobjectdata<qt_meta_
         QtMocHelpers::SlotData<void()>(4, 2, QMC::AccessPrivate, QMetaType::Void),
         // Slot 'selectGlassFolder'
         QtMocHelpers::SlotData<void()>(5, 2, QMC::AccessPrivate, QMetaType::Void),
-        // Slot 'selectDatabaseFolder'
+        // Slot 'selectDatabaseFile'
         QtMocHelpers::SlotData<void()>(6, 2, QMC::AccessPrivate, QMetaType::Void),
         // Slot 'exitApplication'
         QtMocHelpers::SlotData<void()>(7, 2, QMC::AccessPrivate, QMetaType::Void),
@@ -182,7 +182,7 @@ void Constructor::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id,
         case 1: _t->selectDrawingsFolder(); break;
         case 2: _t->selectAdvertisingFolder(); break;
         case 3: _t->selectGlassFolder(); break;
-        case 4: _t->selectDatabaseFolder(); break;
+        case 4: _t->selectDatabaseFile(); break;
         case 5: _t->exitApplication(); break;
         case 6: _t->openOrderFolder(); break;
         case 7: _t->openDrawingsFolder(); break;

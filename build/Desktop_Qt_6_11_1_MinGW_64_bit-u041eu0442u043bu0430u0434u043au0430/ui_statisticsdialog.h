@@ -43,7 +43,7 @@ public:
     QDateEdit *dateToEdit;
     QSpacerItem *horizontalSpacer_2;
     QGroupBox *groupGrouping;
-    QWidget *widget;
+    QWidget *layoutWidget;
     QHBoxLayout *horizontalLayout_2;
     QRadioButton *radioByOrder;
     QRadioButton *radioByDate;
@@ -73,6 +73,7 @@ public:
     QPushButton *exportCsvButton;
     QPushButton *copyButton;
     QSpacerItem *horizontalSpacer_3;
+    QPushButton *addItemButton;
     QPushButton *refreshDataButton;
     QPushButton *closeButton;
 
@@ -124,26 +125,26 @@ public:
         groupGrouping = new QGroupBox(filterGroup);
         groupGrouping->setObjectName("groupGrouping");
         groupGrouping->setMinimumSize(QSize(400, 40));
-        widget = new QWidget(groupGrouping);
-        widget->setObjectName("widget");
-        widget->setGeometry(QRect(0, 15, 374, 24));
-        horizontalLayout_2 = new QHBoxLayout(widget);
+        layoutWidget = new QWidget(groupGrouping);
+        layoutWidget->setObjectName("layoutWidget");
+        layoutWidget->setGeometry(QRect(0, 15, 374, 24));
+        horizontalLayout_2 = new QHBoxLayout(layoutWidget);
         horizontalLayout_2->setObjectName("horizontalLayout_2");
         horizontalLayout_2->setContentsMargins(0, 0, 0, 0);
-        radioByOrder = new QRadioButton(widget);
+        radioByOrder = new QRadioButton(layoutWidget);
         radioByOrder->setObjectName("radioByOrder");
         radioByOrder->setMinimumSize(QSize(120, 22));
         radioByOrder->setChecked(true);
 
         horizontalLayout_2->addWidget(radioByOrder);
 
-        radioByDate = new QRadioButton(widget);
+        radioByDate = new QRadioButton(layoutWidget);
         radioByDate->setObjectName("radioByDate");
         radioByDate->setMinimumSize(QSize(120, 22));
 
         horizontalLayout_2->addWidget(radioByDate);
 
-        radioByNone = new QRadioButton(widget);
+        radioByNone = new QRadioButton(layoutWidget);
         radioByNone->setObjectName("radioByNone");
         radioByNone->setMinimumSize(QSize(120, 22));
 
@@ -290,6 +291,11 @@ public:
 
         horizontalLayout_4->addItem(horizontalSpacer_3);
 
+        addItemButton = new QPushButton(StatisticsDialog);
+        addItemButton->setObjectName("addItemButton");
+
+        horizontalLayout_4->addWidget(addItemButton);
+
         refreshDataButton = new QPushButton(StatisticsDialog);
         refreshDataButton->setObjectName("refreshDataButton");
         refreshDataButton->setMinimumSize(QSize(75, 24));
@@ -333,6 +339,7 @@ public:
         labelItemsValue->setText(QCoreApplication::translate("StatisticsDialog", "0", nullptr));
         exportCsvButton->setText(QCoreApplication::translate("StatisticsDialog", "\320\255\320\272\321\201\320\277\320\276\321\200\321\202 \320\262 CSV", nullptr));
         copyButton->setText(QCoreApplication::translate("StatisticsDialog", "\320\232\320\276\320\277\320\270\321\200\320\276\320\262\320\260\321\202\321\214", nullptr));
+        addItemButton->setText(QCoreApplication::translate("StatisticsDialog", "+ \320\224\320\276\320\261\320\260\320\262\320\270\321\202\321\214 \320\270\320\267\320\264\320\265\320\273\320\270\320\265", nullptr));
         refreshDataButton->setText(QCoreApplication::translate("StatisticsDialog", "\320\236\320\261\320\275\320\276\320\262\320\270\321\202\321\214", nullptr));
         closeButton->setText(QCoreApplication::translate("StatisticsDialog", "\320\227\320\260\320\272\321\200\321\213\321\202\321\214", nullptr));
     } // retranslateUi

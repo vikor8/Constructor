@@ -92,7 +92,7 @@
         <property name="title">
          <string>Группировка</string>
         </property>
-        <widget class="QWidget" name="">
+        <widget class="QWidget" name="layoutWidget">
          <property name="geometry">
           <rect>
            <x>0</x>
@@ -402,6 +402,13 @@ QTreeView::item {
         </size>
        </property>
       </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="addItemButton">
+       <property name="text">
+        <string>+ Добавить изделие</string>
+       </property>
+      </widget>
      </item>
      <item>
       <widget class="QPushButton" name="refreshDataButton">

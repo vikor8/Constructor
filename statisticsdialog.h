@@ -27,6 +27,7 @@ private slots:
     void onExportCsvClicked();
     void onCopyClicked();
     void onTreeDoubleClicked(const QModelIndex &index);
+    void onAddItemClicked();
 
 private:
     void reloadData();
