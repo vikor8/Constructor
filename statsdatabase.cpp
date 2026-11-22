@@ -316,3 +316,28 @@ int StatsDatabase::getOrCreateUserId(const QString &username)
 
     return -1;
 }
+QList<QPair<int, QString>> StatsDatabase::getUsers(bool includeHidden)
+{
+    QList<QPair<int, QString>> list;
+    QSqlQuery q(m_db);
+    QString sql = "SELECT id, username FROM users";
+    if (!includeHidden) {
+        sql += " WHERE is_active = 1";
+    }
+    sql += " ORDER BY username ASC";
+
+    q.exec(sql);
+    while (q.next()) {
+        list.append(qMakePair(q.value(0).toInt(), q.value(1).toString()));
+    }
+    return list;
+}
+
+bool StatsDatabase::setUserActive(int userId, bool active)
+{
+    QSqlQuery q(m_db);
+    q.prepare("UPDATE users SET is_active = ? WHERE id = ?");
+    q.addBindValue(active ? 1 : 0);
+    q.addBindValue(userId);
+    return q.exec();
+}

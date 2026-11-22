@@ -71,6 +71,8 @@ public:
     // --- Пользователи ---
     int getUserId(const QString &username);
     int getOrCreateUserId(const QString &username);
+    QList<QPair<int, QString>> getUsers(bool includeHidden = false);
+    bool setUserActive(int userId, bool active);
 
 private:
     QSqlDatabase m_db;

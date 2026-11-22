@@ -45,9 +45,9 @@ template <> constexpr inline auto StatisticsDialog::qt_create_metaobjectdata<qt_
         "index",
         "onExportCsvClicked",
         "onCopyClicked",
+        "onAddItemClicked",
         "onTreeDoubleClicked",
-        "QModelIndex",
-        "onAddItemClicked"
+        "QModelIndex"
     };
 
     QtMocHelpers::UintData qt_methods {
@@ -61,12 +61,12 @@ template <> constexpr inline auto StatisticsDialog::qt_create_metaobjectdata<qt_
         QtMocHelpers::SlotData<void()>(5, 2, QMC::AccessPrivate, QMetaType::Void),
         // Slot 'onCopyClicked'
         QtMocHelpers::SlotData<void()>(6, 2, QMC::AccessPrivate, QMetaType::Void),
-        // Slot 'onTreeDoubleClicked'
-        QtMocHelpers::SlotData<void(const QModelIndex &)>(7, 2, QMC::AccessPrivate, QMetaType::Void, {{
-            { 0x80000000 | 8, 4 },
-        }}),
         // Slot 'onAddItemClicked'
-        QtMocHelpers::SlotData<void()>(9, 2, QMC::AccessPrivate, QMetaType::Void),
+        QtMocHelpers::SlotData<void()>(7, 2, QMC::AccessPrivate, QMetaType::Void),
+        // Slot 'onTreeDoubleClicked'
+        QtMocHelpers::SlotData<void(const QModelIndex &)>(8, 2, QMC::AccessPrivate, QMetaType::Void, {{
+            { 0x80000000 | 9, 4 },
+        }}),
     };
     QtMocHelpers::UintData qt_properties {
     };
@@ -94,8 +94,8 @@ void StatisticsDialog::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int
         case 1: _t->onPeriodChanged((*reinterpret_cast<std::add_pointer_t<int>>(_a[1]))); break;
         case 2: _t->onExportCsvClicked(); break;
         case 3: _t->onCopyClicked(); break;
-        case 4: _t->onTreeDoubleClicked((*reinterpret_cast<std::add_pointer_t<QModelIndex>>(_a[1]))); break;
-        case 5: _t->onAddItemClicked(); break;
+        case 4: _t->onAddItemClicked(); break;
+        case 5: _t->onTreeDoubleClicked((*reinterpret_cast<std::add_pointer_t<QModelIndex>>(_a[1]))); break;
         default: ;
         }
     }

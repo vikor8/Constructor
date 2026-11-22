@@ -25,6 +25,7 @@
 #include <QPushButton>
 #include <QSqlQuery>
 
+#include "UserDialog.h"
 #include "statisticsdialog.h"
 #include "constructor.h"
 #include "ui_constructor.h"
@@ -1963,41 +1964,29 @@ void Constructor::toggleHistoryButtonsVisibility(bool visible)
 
 void Constructor::changeUser()
 {
-    bool ok;
-    QString newUser = QInputDialog::getText(this,
-                                            "Смена пользователя",
-                                            "Введите новое имя (логин):",
-                                            QLineEdit::Normal,
-                                            m_currentUser,
-                                            &ok).trimmed();
+    // Вызываем наш новый диалог, передавая ему текущего пользователя
+    UserDialog dlg(m_statsDb, m_currentUser, this);
 
-    // Если отменили или ввели то же самое имя — ничего не делаем
-    if (!ok || newUser.isEmpty() || newUser == m_currentUser) {
+    if (dlg.exec() != QDialog::Accepted)
         return;
-    }
 
-    // 1. Обновляем имя в переменной и в настройках
+    QString newUser = dlg.selectedUser();
+    if (newUser.isEmpty() || newUser == m_currentUser)
+        return;
+
+    // Дальше все как было: сохраняем, меняем ID, обновляем заголовок
     m_currentUser = newUser;
     m_settings.setValue("current_user", m_currentUser);
 
-    // 2. Получаем новый ID пользователя из общей базы
     m_currentUserId = m_statsDb->getOrCreateUserId(m_currentUser);
 
     if (m_currentUserId <= 0) {
-        QMessageBox::critical(this, "Ошибка", "Не удалось загрузить профиль нового пользователя.");
+        QMessageBox::critical(this, "Ошибка", "Не удалось загрузить профиль.");
         return;
     }
 
-    // 3. Обновляем заголовок окна
     setWindowTitle(QString("Constructor - [%1] - Управление заказами").arg(m_currentUser));
 
-    // 4. Сообщаем пользователю, что всё ок
     QMessageBox::information(this, "Успех",
-                             QString("Вы вошли как: %1\n\n"
-                                     "Статистика теперь будет отображаться для этого пользователя.")
-                                 .arg(m_currentUser));
-
-    // Примечание: Если в этот момент открыто окно статистики, его лучше закрыть
-    // и открыть заново, чтобы оно подхватило новый ID.
-    // Но так как мы вызываем это из главного окна, статистика скорее всего закрыта.
+                             QString("Вы вошли как: %1").arg(m_currentUser));
 }

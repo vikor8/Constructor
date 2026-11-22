@@ -1,39 +1,33 @@
 #include "constructor.h"
+#include "UserDialog.h"
+#include "statsdatabase.h"
 #include <QApplication>
-#include <QInputDialog>
 #include <QSettings>
-#include <QLineEdit>
 
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
 
-    // Открываем настройки (те же, что и в Constructor)
     QSettings settings("Best-studio", "ConstructorApp");
-
-    // Пытаемся получить сохранённое имя пользователя
     QString username = settings.value("current_user").toString();
 
-    // Если имя пустое (первый запуск или его стерли) — спрашиваем
+    // Если имени нет (первый запуск) — показываем диалог выбора
     if (username.isEmpty()) {
-        bool ok;
-        username = QInputDialog::getText(nullptr,
-                                         "Первый запуск",
-                                         "Введите ваше имя (логин):",
-                                         QLineEdit::Normal,
-                                         "",
-                                         &ok).trimmed();
+        // Временная база, чтобы получить список пользователей
+        StatsDatabase tempDb;
+        QString dbPath = "\\\\Server\\Shared\\ConstructorDB\\shared_workstats.db"; // Ваш путь
+        tempDb.init(dbPath);
 
-        // Если нажали Отмену или ввели пустоту — закрываем программу
-        if (!ok || username.isEmpty()) {
+        UserDialog dialog(&tempDb, "");
+        if (dialog.exec() == QDialog::Accepted) {
+            username = dialog.selectedUser();
+            if (username.isEmpty()) return 0;
+            settings.setValue("current_user", username);
+        } else {
             return 0;
         }
-
-        // Сохраняем имя для будущих запусков
-        settings.setValue("current_user", username);
     }
 
-    // Запускаем главное окно с нужным именем
     Constructor w(username);
     w.show();
     return QApplication::exec();

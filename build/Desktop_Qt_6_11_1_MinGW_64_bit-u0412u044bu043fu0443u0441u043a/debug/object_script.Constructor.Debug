@@ -1,3 +1,4 @@
+debug/UserDialog.o
 debug/flipbutton.o
 debug/main.o
 debug/constructor.o
@@ -5,6 +6,7 @@ debug/modebutton.o
 debug/sortfilterproxymodel.o
 debug/statisticsdialog.o
 debug/statsdatabase.o
+debug/moc_UserDialog.o
 debug/moc_constructor.o
 debug/moc_flipbutton.o
 debug/moc_modebutton.o
