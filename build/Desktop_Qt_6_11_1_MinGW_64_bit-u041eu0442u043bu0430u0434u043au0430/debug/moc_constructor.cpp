@@ -74,8 +74,9 @@ template <> constexpr inline auto Constructor::qt_create_metaobjectdata<qt_meta_
         "visible",
         "toggleToolbar1Visibility",
         "toggleToolbar2Visibility",
+        "toggleHistoryButtonsVisibility",
         "openStatisticsDialog",
-        "toggleHistoryButtonsVisibility"
+        "changeUser"
     };
 
     QtMocHelpers::UintData qt_methods {
@@ -149,12 +150,14 @@ template <> constexpr inline auto Constructor::qt_create_metaobjectdata<qt_meta_
         QtMocHelpers::SlotData<void(bool)>(34, 2, QMC::AccessPrivate, QMetaType::Void, {{
             { QMetaType::Bool, 32 },
         }}),
-        // Slot 'openStatisticsDialog'
-        QtMocHelpers::SlotData<void()>(35, 2, QMC::AccessPrivate, QMetaType::Void),
         // Slot 'toggleHistoryButtonsVisibility'
-        QtMocHelpers::SlotData<void(bool)>(36, 2, QMC::AccessPrivate, QMetaType::Void, {{
+        QtMocHelpers::SlotData<void(bool)>(35, 2, QMC::AccessPrivate, QMetaType::Void, {{
             { QMetaType::Bool, 32 },
         }}),
+        // Slot 'openStatisticsDialog'
+        QtMocHelpers::SlotData<void()>(36, 2, QMC::AccessPrivate, QMetaType::Void),
+        // Slot 'changeUser'
+        QtMocHelpers::SlotData<void()>(37, 2, QMC::AccessPrivate, QMetaType::Void),
     };
     QtMocHelpers::UintData qt_properties {
     };
@@ -205,8 +208,9 @@ void Constructor::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id,
         case 24: _t->toggleStatsVisibility((*reinterpret_cast<std::add_pointer_t<bool>>(_a[1]))); break;
         case 25: _t->toggleToolbar1Visibility((*reinterpret_cast<std::add_pointer_t<bool>>(_a[1]))); break;
         case 26: _t->toggleToolbar2Visibility((*reinterpret_cast<std::add_pointer_t<bool>>(_a[1]))); break;
-        case 27: _t->openStatisticsDialog(); break;
-        case 28: _t->toggleHistoryButtonsVisibility((*reinterpret_cast<std::add_pointer_t<bool>>(_a[1]))); break;
+        case 27: _t->toggleHistoryButtonsVisibility((*reinterpret_cast<std::add_pointer_t<bool>>(_a[1]))); break;
+        case 28: _t->openStatisticsDialog(); break;
+        case 29: _t->changeUser(); break;
         default: ;
         }
     }
@@ -231,14 +235,14 @@ int Constructor::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 29)
+        if (_id < 30)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 29;
+        _id -= 30;
     }
     if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 29)
+        if (_id < 30)
             *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType();
-        _id -= 29;
+        _id -= 30;
     }
     return _id;
 }

@@ -1,63 +1,71 @@
 #include "statisticsdialog.h"
 #include "ui_statisticsdialog.h"
 #include "statsdatabase.h"
-#include <QTimer>
+#include "sortfilterproxymodel.h" // для парсеров артикула
+
 #include <QPushButton>
+#include <QRadioButton>
+#include <QCheckBox>
+#include <QComboBox>
+#include <QDateEdit>
+#include <QLineEdit>
+#include <QLabel>
 #include <QDate>
+#include <QTimer>
+#include <QMap>
+#include <QFont>
+#include <QBrush>
+#include <QColor>
+#include <QHeaderView>
 #include <QStandardItem>
 #include <QStandardItemModel>
+#include <QVBoxLayout>
+#include <QApplication>
+#include <QClipboard>
 #include <QFileDialog>
 #include <QFile>
 #include <QTextStream>
 #include <QMessageBox>
-#include <QApplication>
-#include <QClipboard>
-#include <QHeaderView>
-#include <QMap>
-#include <QBrush>
-#include <QColor>
-#include <QVBoxLayout>
-#include <QLabel>
-#include <QTreeView>
 #include <QInputDialog>
-#include <cmath>
-#include "sortfilterproxymodel.h"
 #include <QFormLayout>
-#include <QLineEdit>
+#include <cmath>
 
-StatisticsDialog::StatisticsDialog(StatsDatabase *db, QWidget *parent)
+StatisticsDialog::StatisticsDialog(StatsDatabase *db, int userId, QWidget *parent)
     : QDialog(parent)
     , ui(new Ui::StatisticsDialog)
     , m_db(db)
+    , m_userId(userId)   // Сохраняем ID пользователя
 {
     ui->setupUi(this);
 
-    // Итоговая строка под таблицей
+    // ---------------------------------------------------------
+    // 1. Итоговая строка "Итого: ..." под таблицей
+    // ---------------------------------------------------------
     m_totalLabel = new QLabel(this);
     m_totalLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_totalLabel->setStyleSheet(
         "QLabel { padding: 4px 12px; color: #333; font-weight: bold; "
         "border-top: 1px solid #d0d0d0; }");
 
-    // Вставляем метку в основной вертикальный layout диалога —
-    // между таблицей и строкой кнопок
+    // Вставляем её в основной вертикальный layout окна
     if (auto *vlay = qobject_cast<QVBoxLayout*>(layout())) {
         vlay->insertWidget(vlay->count() - 1, m_totalLabel);
     }
-    // Модель для таблицы
+
+    // ---------------------------------------------------------
+    // 2. Настройка модели для таблицы
+    // ---------------------------------------------------------
     m_model = new QStandardItemModel(this);
-    m_model->setHorizontalHeaderLabels({
-        QStringLiteral("Изделие"),
-        QStringLiteral("Наименование"),
-        QStringLiteral("Баллы"),
-        QStringLiteral("→ ТО")
-    });
     ui->statsTree->setModel(m_model);
-    connect(ui->statsTree, &QTreeView::doubleClicked,
-            this, &StatisticsDialog::onTreeDoubleClicked);
     ui->statsTree->setRootIsDecorated(true);
 
-    // Период
+    // Подключаем двойной клик для редактирования (баллы, артикул, наименование)
+    connect(ui->statsTree, &QTreeView::doubleClicked,
+            this, &StatisticsDialog::onTreeDoubleClicked);
+
+    // ---------------------------------------------------------
+    // 3. Заполнение выпадающего списка периодов
+    // ---------------------------------------------------------
     ui->periodCombo->addItems({
         QStringLiteral("Сегодня"),
         QStringLiteral("Текущая неделя"),
@@ -66,25 +74,41 @@ StatisticsDialog::StatisticsDialog(StatsDatabase *db, QWidget *parent)
         QStringLiteral("Всё время"),
         QStringLiteral("Свой диапазон…")
     });
-    ui->periodCombo->setCurrentIndex(2);   // Текущий месяц
+    ui->periodCombo->setCurrentIndex(2); // По умолчанию "Текущий месяц"
 
-    // Кнопки
-    connect(ui->closeButton,      &QPushButton::clicked, this, &QDialog::close);
-    connect(ui->refreshDataButton, &QPushButton::clicked, this, &StatisticsDialog::onRefreshClicked);
-    connect(ui->periodCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &StatisticsDialog::onPeriodChanged);
-    connect(ui->onlyScoredCheck, &QCheckBox::checkStateChanged,
-            this, &StatisticsDialog::onRefreshClicked);
+    // ---------------------------------------------------------
+    // 4. Таймер для задержки поиска (чтобы не дёргать БД на каждую букву)
+    // ---------------------------------------------------------
     m_searchTimer = new QTimer(this);
     m_searchTimer->setSingleShot(true);
     m_searchTimer->setInterval(300);
-    connect(m_searchTimer, &QTimer::timeout,
-            this, &StatisticsDialog::onRefreshClicked);
+    connect(m_searchTimer, &QTimer::timeout, this, &StatisticsDialog::onRefreshClicked);
 
-    connect(ui->searchEdit, &QLineEdit::textChanged,
-            this, [this]() {
-                m_searchTimer->start();
-            });
+    // ---------------------------------------------------------
+    // 5. Подключение сигналов UI
+    // ---------------------------------------------------------
+
+    // Кнопки
+    connect(ui->closeButton,       &QPushButton::clicked, this, &QDialog::close);
+    connect(ui->refreshDataButton, &QPushButton::clicked, this, &StatisticsDialog::onRefreshClicked);
+    connect(ui->addItemButton,     &QPushButton::clicked, this, &StatisticsDialog::onAddItemClicked);
+    connect(ui->exportCsvButton,   &QPushButton::clicked, this, &StatisticsDialog::onExportCsvClicked);
+    connect(ui->copyButton,        &QPushButton::clicked, this, &StatisticsDialog::onCopyClicked);
+
+    // Фильтры
+    connect(ui->periodCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &StatisticsDialog::onPeriodChanged);
+
+    connect(ui->dateFromEdit, &QDateEdit::dateChanged, this, &StatisticsDialog::onRefreshClicked);
+    connect(ui->dateToEdit,   &QDateEdit::dateChanged, this, &StatisticsDialog::onRefreshClicked);
+
+    connect(ui->searchEdit, &QLineEdit::textChanged, this, [this]() {
+        m_searchTimer->start(); // Запускаем таймер при вводе текста
+    });
+
+    connect(ui->onlyScoredCheck, &QCheckBox::checkStateChanged, this, &StatisticsDialog::onRefreshClicked);
+
+    // Группировка
     connect(ui->radioByOrder, &QRadioButton::toggled, this, [this](bool on) {
         if (on) onRefreshClicked();
     });
@@ -95,17 +119,9 @@ StatisticsDialog::StatisticsDialog(StatsDatabase *db, QWidget *parent)
         if (on) onRefreshClicked();
     });
 
-    connect(ui->dateFromEdit, &QDateEdit::dateChanged,
-            this, &StatisticsDialog::onRefreshClicked);
-    connect(ui->dateToEdit, &QDateEdit::dateChanged,
-            this, &StatisticsDialog::onRefreshClicked);
-    connect(ui->exportCsvButton, &QPushButton::clicked,
-            this, &StatisticsDialog::onExportCsvClicked);
-    connect(ui->copyButton, &QPushButton::clicked,
-            this, &StatisticsDialog::onCopyClicked);
-    connect(ui->addItemButton, &QPushButton::clicked, this, &StatisticsDialog::onAddItemClicked);
-
-    // Первичная загрузка
+    // ---------------------------------------------------------
+    // 6. Первичная загрузка данных
+    // ---------------------------------------------------------
     reloadData();
 }
 
@@ -192,7 +208,7 @@ void StatisticsDialog::reloadData()
     const QDate   to   = resolveToDate();
     const QString like = ui->searchEdit->text().trimmed();
 
-    const QList<SentRecord> records = m_db->findSentRecords(from, to, like);
+    const QList<SentRecord> records = m_db->findSentRecords(m_userId, from, to, like);
 
     // Какой режим группировки выбран
     enum GroupMode { ByOrder, ByDate, None };
@@ -574,61 +590,6 @@ QString StatisticsDialog::pluralizePoints(int n)
     return QStringLiteral("баллов");
 }
 
-void StatisticsDialog::onItemChanged(QStandardItem *item)
-{
-    if (!item || m_updating) return;
-    if (item->column() != 2) return;
-
-    QStandardItem *parent = item->parent();
-
-    const int recordId = item->data(Qt::UserRole).toInt();
-    if (recordId <= 0) return;
-
-    bool ok = false;
-    const int newPoints = item->text().trimmed().toInt(&ok);
-    const int oldPoints = item->data(Qt::UserRole + 1).toInt();
-
-    if (!ok || newPoints < 0 || newPoints > 9999) {
-        QMessageBox::warning(this, QStringLiteral("Некорректное значение"),
-                             QStringLiteral("Введите целое число от 0 до 9999."));
-        m_updating = true;
-        item->setText(QString::number(oldPoints));
-        m_updating = false;
-        return;
-    }
-
-    if (newPoints == oldPoints) return;
-
-    if (!m_db->updateSentPoints(recordId, newPoints)) {
-        QMessageBox::warning(this, QStringLiteral("Ошибка"),
-                             QStringLiteral("Не удалось сохранить баллы в БД."));
-        m_updating = true;
-        item->setText(QString::number(oldPoints));
-        m_updating = false;
-        return;
-    }
-
-    m_updating = true;
-    item->setData(newPoints, Qt::UserRole + 1);
-
-    if (parent) {
-        int groupPoints = 0;
-        for (int j = 0; j < parent->rowCount(); ++j) {
-            if (QStandardItem *ptCell = parent->child(j, 2))
-                groupPoints += ptCell->text().toInt();
-        }
-
-        const QModelIndex parentIdx       = parent->index();
-        const QModelIndex parentPointsIdx = parentIdx.siblingAtColumn(2);
-
-        if (QStandardItem *parentPointsCell = m_model->itemFromIndex(parentPointsIdx)) {
-            parentPointsCell->setText(QString::number(groupPoints));
-        }
-    }
-    m_updating = false;
-
-    recalcTotals();
-}
 
 void StatisticsDialog::recalcTotals()
 {
@@ -785,7 +746,7 @@ void StatisticsDialog::onAddItemClicked()
     }
 
     // Записываем в БД (дата установится автоматически текущая)
-    if (m_db->recordSentToTO(article, name, orderNum, points)) {
+    if (m_db->recordSentToTO(m_userId, article, name, orderNum, points)) {
         QMessageBox::information(this, "Успех", QString("Изделие '%1' успешно добавлено.").arg(article));
         reloadData(); // Обновляем таблицу
     } else {

@@ -1,5 +1,4 @@
-#include "constructor.h"
-#include "ui_constructor.h"
+#include <utility>
 #include <QToolBar>
 #include <QLineEdit>
 #include <QMenuBar>
@@ -24,17 +23,26 @@
 #include <QClipboard>
 #include <QRegularExpression>
 #include <QPushButton>
+#include <QSqlQuery>
+
 #include "statisticsdialog.h"
+#include "constructor.h"
+#include "ui_constructor.h"
 
 
-Constructor::Constructor(QWidget *parent)
+Constructor::Constructor(const QString &username, QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::Constructor)
     , m_settings("Best-studio", "ConstructorApp")
     , m_fileSystemModel(nullptr)
+    , m_currentUser(username)
     , m_orderCombo(nullptr)
     , m_productLineEdit(nullptr)
     , m_maxHistoryDisplay(3)
+    , m_showStats(true)
+    , m_showToolbar1(true)
+    , m_showToolbar2(true)
+    , m_showHistoryButtons(true)
     , m_timerRunning(false)
     , m_isSketchMode(true)
     , m_timeLabel(nullptr)
@@ -54,7 +62,6 @@ Constructor::Constructor(QWidget *parent)
     // Настраиваем модель файловой системы
     setupFileSystemModel();
 
-
     // Загружаем сохранённые настройки
     loadSettings();
 
@@ -72,10 +79,13 @@ Constructor::Constructor(QWidget *parent)
     QAction *drawingsFolderAction = fileMenu->addAction("Папка Чертежи");
     QAction *advertisingFolderAction = fileMenu->addAction("Реклама");
     QAction *glassFolderAction = fileMenu->addAction("Цех стекла");
-   QAction *databaseFileAction = fileMenu->addAction("Файл базы данных...");
+    QAction *databaseFolderAction = fileMenu->addAction("Файл базы данных...");
     fileMenu->addSeparator();
     QAction *sortSettingsAction = fileMenu->addAction("Сортировка");
     QAction *historySettingsAction = fileMenu->addAction("Настройка истории заказов");
+    fileMenu->addSeparator();
+    QAction *changeUserAction = fileMenu->addAction("Сменить пользователя...");
+    connect(changeUserAction, &QAction::triggered, this, &Constructor::changeUser);
     fileMenu->addSeparator();
     QAction *exitAction = fileMenu->addAction("Выход");
 
@@ -84,7 +94,7 @@ Constructor::Constructor(QWidget *parent)
     connect(drawingsFolderAction, &QAction::triggered, this, &Constructor::selectDrawingsFolder);
     connect(advertisingFolderAction, &QAction::triggered, this, &Constructor::selectAdvertisingFolder);
     connect(glassFolderAction, &QAction::triggered, this, &Constructor::selectGlassFolder);
-   connect(databaseFileAction, &QAction::triggered, this, &Constructor::selectDatabaseFile);
+    connect(databaseFolderAction, &QAction::triggered, this, &Constructor::selectDatabaseFile);
     connect(sortSettingsAction, &QAction::triggered, this, &Constructor::showSortSettingsDialog);
     connect(historySettingsAction, &QAction::triggered, this, &Constructor::showHistorySettingsDialog);
     connect(exitAction, &QAction::triggered, this, &Constructor::exitApplication);
@@ -92,43 +102,25 @@ Constructor::Constructor(QWidget *parent)
     // ----- Меню "Вид" -----
     QMenu *viewMenu = menuBar->addMenu("Вид");
 
-    // Счётчик времени
     QAction *toggleStatsAction = viewMenu->addAction("Счетчик времени");
     toggleStatsAction->setCheckable(true);
-    toggleStatsAction->setChecked(m_showStats);          // <-- из настроек
-    connect(toggleStatsAction, &QAction::toggled,
-            this, &Constructor::toggleStatsVisibility);
+    toggleStatsAction->setChecked(m_showStats);
+    connect(toggleStatsAction, &QAction::toggled, this, &Constructor::toggleStatsVisibility);
 
-    // Панель заказов
     QAction *toggleToolbar1Action = viewMenu->addAction("Панель заказов");
     toggleToolbar1Action->setCheckable(true);
-    toggleToolbar1Action->setChecked(m_showToolbar1);    // <-- из настроек
-    connect(toggleToolbar1Action, &QAction::toggled,
-            this, &Constructor::toggleToolbar1Visibility);
+    toggleToolbar1Action->setChecked(m_showToolbar1);
+    connect(toggleToolbar1Action, &QAction::toggled, this, &Constructor::toggleToolbar1Visibility);
 
-    // Панель изделий
     QAction *toggleToolbar2Action = viewMenu->addAction("Панель изделий");
     toggleToolbar2Action->setCheckable(true);
-    toggleToolbar2Action->setChecked(m_showToolbar2);    // <-- из настроек
-    connect(toggleToolbar2Action, &QAction::toggled,
-            this, &Constructor::toggleToolbar2Visibility);
+    toggleToolbar2Action->setChecked(m_showToolbar2);
+    connect(toggleToolbar2Action, &QAction::toggled, this, &Constructor::toggleToolbar2Visibility);
 
-    // Новая галочка для панели заказов
     QAction *toggleHistoryAction = viewMenu->addAction("Кнопки последних заказов");
     toggleHistoryAction->setCheckable(true);
     toggleHistoryAction->setChecked(m_showHistoryButtons);
-    connect(toggleHistoryAction, &QAction::toggled,
-            this, &Constructor::toggleHistoryButtonsVisibility);
-
-    QPushButton *statsButton = new QPushButton("Статистика", this);
-    statsButton->setFlat(true);
-    statsButton->setCursor(Qt::PointingHandCursor);
-    statsButton->setFocusPolicy(Qt::NoFocus);
-
-    menuBar->setCornerWidget(statsButton, Qt::TopRightCorner);
-
-    connect(statsButton, &QPushButton::clicked,
-            this, &Constructor::openStatisticsDialog);
+    connect(toggleHistoryAction, &QAction::toggled, this, &Constructor::toggleHistoryButtonsVisibility);
 
     // Устанавливаем менюбар
     setMenuBar(menuBar);
@@ -138,9 +130,15 @@ Constructor::Constructor(QWidget *parent)
     m_historyToolBar->setMovable(false);
     m_historyToolBar->setFloatable(false);
     m_historyToolBar->setStyleSheet("QToolBar { border: none; padding: 2px; }");
-
-    // Добавляем панель в верхнюю область (она автоматически встанет под меню)
     addToolBar(Qt::TopToolBarArea, m_historyToolBar);
+
+    // ----- Кнопка "Статистика" в правом углу строки меню -----
+    QPushButton *statsButton = new QPushButton("Статистика", this);
+    statsButton->setFlat(true);
+    statsButton->setCursor(Qt::PointingHandCursor);
+    statsButton->setFocusPolicy(Qt::NoFocus);
+    menuBar->setCornerWidget(statsButton, Qt::TopRightCorner);
+    connect(statsButton, &QPushButton::clicked, this, &Constructor::openStatisticsDialog);
 
     // ======================= ТУЛБАР 1: ЗАКАЗЫ =======================
     QToolBar *tbar = new QToolBar("Панель заказов", this);
@@ -149,7 +147,6 @@ Constructor::Constructor(QWidget *parent)
     tbar->setOrientation(Qt::Vertical);
     addToolBar(Qt::LeftToolBarArea, tbar);
 
-    // Комбобокс для номера заказа
     m_orderCombo = new QComboBox(tbar);
     m_orderCombo->setEditable(true);
     m_orderCombo->setMaximumWidth(70);
@@ -157,7 +154,6 @@ Constructor::Constructor(QWidget *parent)
     updateOrderCombo();
     tbar->addWidget(m_orderCombo);
 
-    // Кнопки первого тулбара
     QAction *actionOrder = tbar->addAction("Заказ");
     QAction *actionSketch = tbar->addAction("Эскизы");
     QAction *actionDrawTO = tbar->addAction("Чертежи в ТО");
@@ -169,7 +165,7 @@ Constructor::Constructor(QWidget *parent)
     connect(actionDrawTO, &QAction::triggered, this, &Constructor::openDrawingsInTOFolder);
     connect(actionDraw, &QAction::triggered, this, &Constructor::openDrawingsFolder);
     connect(actionCompare, &QAction::triggered, this, &Constructor::openPZFolder);
-    tbar->setFixedWidth(70); //ширина тулбара
+    tbar->setFixedWidth(70);
     tbar->setVisible(m_showToolbar1);
 
     // ================== ВТОРОЙ ТУЛБАР (без счётчика) ==================
@@ -179,25 +175,23 @@ Constructor::Constructor(QWidget *parent)
     tbar2->setOrientation(Qt::Vertical);
     addToolBar(Qt::LeftToolBarArea, tbar2);
 
-    // Поле ввода номера изделия
     m_productLineEdit = new QLineEdit(tbar2);
     m_productLineEdit->setPlaceholderText("№ Изделия");
     m_productLineEdit->setMaximumWidth(70);
     tbar2->addWidget(m_productLineEdit);
 
-    // Разделитель и кнопки второго тулбара (без счётчика)
     tbar2->addSeparator();
     QAction *actionTOMove = tbar2->addAction("->ТО");
     tbar2->addSeparator();
     QAction *actionCopyName = tbar2->addAction("Имя");
     QAction *actionCopyArticul = tbar2->addAction("Артикул");
 
-    // Подключение сигналов второго тулбара
     connect(actionTOMove, &QAction::triggered, this, &Constructor::copyToTOFolder);
     connect(actionCopyName, &QAction::triggered, this, &Constructor::copyFileName);
     connect(actionCopyArticul, &QAction::triggered, this, &Constructor::copyArticul);
-    tbar2->setFixedWidth(70); //ширина тулбара
+    tbar2->setFixedWidth(70);
     tbar2->setVisible(m_showToolbar2);
+
     // ================== ТРЕТИЙ ТУЛБАР: СЧЕТЧИК ВРЕМЕНИ ==================
     QToolBar *tbar3 = new QToolBar("Счетчик времени", this);
     m_toolbar3 = tbar3;
@@ -205,24 +199,21 @@ Constructor::Constructor(QWidget *parent)
     tbar3->setOrientation(Qt::Vertical);
     addToolBar(Qt::LeftToolBarArea, tbar3);
 
-    // Label времени
     m_timeLabel = new QLabel("00:00", tbar3);
     m_timeLabel->setAlignment(Qt::AlignCenter);
     m_timeLabel->setStyleSheet("font-size: 16px; font-weight: bold; color: white; background-color: #333; border-radius: 4px; padding: 4px;");
     m_timeLabel->setMaximumWidth(70);
     tbar3->addWidget(m_timeLabel);
 
-    // Кнопка Пуск/Стоп
     m_playStopBtn = new FlipButton(tbar3);
     m_playStopBtn->setMaximumWidth(70);
     m_playStopBtn->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     tbar3->addWidget(m_playStopBtn);
 
-    // Кнопка Эскиз/Чертежи
     m_modeBtn = new ModeButton(tbar3);
     m_modeBtn->setMaximumWidth(70);
     tbar3->addWidget(m_modeBtn);
-    tbar3->setFixedWidth(70); //ширина тулбара
+    tbar3->setFixedWidth(70);
     tbar3->setVisible(m_showStats);
 
     // ======================= ИНИЦИАЛИЗАЦИЯ ТАЙМЕРА И БД =======================
@@ -230,40 +221,49 @@ Constructor::Constructor(QWidget *parent)
     m_isSketchMode = true;
     m_statsDb = new StatsDatabase(this);
 
+    // Определяем путь к базе данных (если на сервере - используем сетевой путь)
     QString dbPath;
-    // Если путь задан и файл по этому пути существует — грузим его
     if (!m_databasePath.isEmpty() && QFileInfo::exists(m_databasePath)) {
         dbPath = m_databasePath;
     } else {
-        // Иначе — по умолчанию рядом с exe
-        dbPath = QCoreApplication::applicationDirPath() + "/workstats.db";
-        m_databasePath = dbPath; // сохраним дефолтный путь в переменную
+        // Путь по умолчанию для сервера (замените на свой реальный путь)
+        dbPath = "\\\\Server\\Shared\\ConstructorDB\\shared_workstats.db";
     }
 
     if (!m_statsDb->init(dbPath)) {
         QMessageBox::critical(this, "Ошибка БД",
-                              QString("Не удалось открыть базу статистики:\n%1").arg(dbPath));
-    }
+                              QString("Не удалось открыть общую базу данных:\n%1").arg(dbPath));
+    } else {
+        // =====================================================================
+        // === ВСТАВИТЬ СЮДА: Получаем или создаем ID текущего пользователя ===
+        // =====================================================================
+        int uid = m_statsDb->getUserId(m_currentUser);
+        if (uid <= 0) {
+            // Если пользователя нет, создаем его
+            QSqlQuery q(m_statsDb->database());
+            q.prepare("INSERT INTO users (username) VALUES (?)");
+            q.addBindValue(m_currentUser);
+            q.exec();
+            uid = m_statsDb->getUserId(m_currentUser);
+        }
+        m_currentUserId = uid; // Сохраняем в переменную класса
 
-    if (!m_statsDb->init(dbPath)) {
-        QMessageBox::critical(this, "Ошибка БД",
-                              QString("Не удалось открыть базу статистики:\n%1").arg(dbPath));
+        qDebug() << "Пользователь:" << m_currentUser << "ID:" << m_currentUserId;
+        // =====================================================================
     }
 
     m_displayTimer = new QTimer(this);
     connect(m_displayTimer, &QTimer::timeout, this, &Constructor::updateTimerLabel);
 
-    // Подключаем сигналы кнопок статистики
     connect(m_playStopBtn, &FlipButton::toggled, this, &Constructor::onPlayStopToggled);
     connect(m_modeBtn, &ModeButton::modeChanged, this, &Constructor::onModeChanged);
-
-    // Подключаем изменение номера изделия
-    connect(m_productLineEdit, &QLineEdit::textChanged,
-            this, &Constructor::onProductLineEditChanged);
+    connect(m_productLineEdit, &QLineEdit::textChanged, this, &Constructor::onProductLineEditChanged);
 
     // ======================= ЗАГОЛОВОК И СТАТУСБАР =======================
-    setWindowTitle("Constructor - Управление заказами");
+    setWindowTitle(QString("Constructor - [%1] - Управление заказами").arg(m_currentUser));
     statusBar()->showMessage("Ctrl+Клик - открыть в проводнике | Клик по заголовку - сортировка | Двойной клик - открыть файл");
+
+    // Повторно обновляем комбо и кнопки, когда всё готово
     updateOrderCombo();
 }
 
@@ -570,6 +570,7 @@ void Constructor::onFolderViewDoubleClicked(const QModelIndex &index)
 }
 
 // Поиск папки заказа
+
 QString Constructor::findOrderFolder(const QString &orderNumber, const QString &basePath)
 {
     if (basePath.isEmpty() || !QDir(basePath).exists()) {
@@ -580,15 +581,14 @@ QString Constructor::findOrderFolder(const QString &orderNumber, const QString &
     const QStringList allFolders = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     QStringList foundFolders;
 
-    // Различные форматы имени папки
     QStringList exactPatterns;
     exactPatterns << "№ " + orderNumber;
     exactPatterns << "№" + orderNumber;
     exactPatterns << orderNumber;
 
-    // Поиск точных совпадений
-    for (const QString& folderName : allFolders) {
-        for (const QString& pattern : exactPatterns) {
+    // ИСПОЛЬЗУЕМ std::as_const
+    for (const QString& folderName : std::as_const(allFolders)) {
+        for (const QString& pattern : std::as_const(exactPatterns)) {
             if (folderName == pattern) {
                 foundFolders.append(folderName);
                 break;
@@ -596,9 +596,8 @@ QString Constructor::findOrderFolder(const QString &orderNumber, const QString &
         }
     }
 
-    // Если точных совпадений нет, ищем частичные
     if (foundFolders.isEmpty()) {
-        for (const QString& folderName : allFolders) {
+        for (const QString& folderName : std::as_const(allFolders)) {
             if (folderName.startsWith("№ ") && folderName.contains(orderNumber)) {
                 foundFolders.append(folderName);
             }
@@ -611,9 +610,8 @@ QString Constructor::findOrderFolder(const QString &orderNumber, const QString &
         }
     }
 
-    // Последняя попытка - поиск по содержимому
     if (foundFolders.isEmpty()) {
-        for (const QString& folderName : allFolders) {
+        for (const QString& folderName : std::as_const(allFolders)) {
             if (folderName.contains(orderNumber, Qt::CaseInsensitive)) {
                 foundFolders.append(folderName);
             }
@@ -624,7 +622,6 @@ QString Constructor::findOrderFolder(const QString &orderNumber, const QString &
         return QString();
     }
 
-    // Если найдено несколько папок, показываем выбор
     QString selectedFolder;
     if (foundFolders.size() > 1) {
         bool ok;
@@ -1317,7 +1314,7 @@ void Constructor::copyToTOFolder()
                                               const double  points   = CustomSortProxyModel::parseItemPoints(itemFolderName);
 
                                               if (!article.isEmpty()) {
-                                                  if (!m_statsDb->recordSentToTO(article, name, orderNum, points)) {
+                                                  if (!m_statsDb->recordSentToTO(m_currentUserId, article, name, orderNum, points)) {
                                                       qWarning() << "Не удалось записать в БД:";
                                                   } else {
                                                       qDebug() << "[->TO] записано в БД:"
@@ -1545,7 +1542,7 @@ void Constructor::showSortSettingsDialog()
 
     // Загружаем текущий порядок
     QStringList currentPriority = m_proxyModel->getFilePriority();
-    for (const QString &ext : currentPriority) {
+    for (const QString &ext : std::as_const(currentPriority)) {
         QListWidgetItem *item = new QListWidgetItem(ext);
         item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
         listWidget->addItem(item);
@@ -1950,7 +1947,7 @@ void Constructor::onProductLineEditChanged(const QString &text)
 }
 void Constructor::openStatisticsDialog()
 {
-    StatisticsDialog dlg(m_statsDb, this);
+    StatisticsDialog dlg(m_statsDb, m_currentUserId, this);
     dlg.exec();
 }
 
@@ -1962,4 +1959,45 @@ void Constructor::toggleHistoryButtonsVisibility(bool visible)
         m_historyToolBar->setVisible(visible && m_orderCombo->count() > 0);
     }
     saveSettings();
+}
+
+void Constructor::changeUser()
+{
+    bool ok;
+    QString newUser = QInputDialog::getText(this,
+                                            "Смена пользователя",
+                                            "Введите новое имя (логин):",
+                                            QLineEdit::Normal,
+                                            m_currentUser,
+                                            &ok).trimmed();
+
+    // Если отменили или ввели то же самое имя — ничего не делаем
+    if (!ok || newUser.isEmpty() || newUser == m_currentUser) {
+        return;
+    }
+
+    // 1. Обновляем имя в переменной и в настройках
+    m_currentUser = newUser;
+    m_settings.setValue("current_user", m_currentUser);
+
+    // 2. Получаем новый ID пользователя из общей базы
+    m_currentUserId = m_statsDb->getOrCreateUserId(m_currentUser);
+
+    if (m_currentUserId <= 0) {
+        QMessageBox::critical(this, "Ошибка", "Не удалось загрузить профиль нового пользователя.");
+        return;
+    }
+
+    // 3. Обновляем заголовок окна
+    setWindowTitle(QString("Constructor - [%1] - Управление заказами").arg(m_currentUser));
+
+    // 4. Сообщаем пользователю, что всё ок
+    QMessageBox::information(this, "Успех",
+                             QString("Вы вошли как: %1\n\n"
+                                     "Статистика теперь будет отображаться для этого пользователя.")
+                                 .arg(m_currentUser));
+
+    // Примечание: Если в этот момент открыто окно статистики, его лучше закрыть
+    // и открыть заново, чтобы оно подхватило новый ID.
+    // Но так как мы вызываем это из главного окна, статистика скорее всего закрыта.
 }

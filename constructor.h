@@ -28,14 +28,15 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class Constructor; }
 QT_END_NAMESPACE
 
-class StatisticsDialog;   // forward declaration
+class StatisticsDialog; // forward declaration
 
 class Constructor : public QMainWindow
 {
     Q_OBJECT
 
 public:
-    Constructor(QWidget *parent = nullptr);
+    // Конструктор теперь принимает имя пользователя
+    explicit Constructor(const QString &username, QWidget *parent = nullptr);
     ~Constructor();
 
 private slots:
@@ -43,7 +44,7 @@ private slots:
     void selectDrawingsFolder();
     void selectAdvertisingFolder();
     void selectGlassFolder();
-    void selectDatabaseFile();
+    void selectDatabaseFile();       // было selectDatabaseFolder
     void exitApplication();
     void openOrderFolder();
     void openDrawingsFolder();
@@ -66,8 +67,9 @@ private slots:
     void toggleStatsVisibility(bool visible);
     void toggleToolbar1Visibility(bool visible);
     void toggleToolbar2Visibility(bool visible);
-    void openStatisticsDialog();
     void toggleHistoryButtonsVisibility(bool visible);
+    void openStatisticsDialog();
+    void changeUser();
 
 private:
     void loadSettings();
@@ -78,17 +80,21 @@ private:
     void openFolderInView(const QString &path);
     void openInExplorer(const QString &path);
     QString findTargetPath(const QString &orderFolderPath, const QString &buttonType);
+    void updateHighlightMode(const QString &currentPath);
 
     Ui::Constructor *ui;
     QSettings m_settings;
     QFileSystemModel *m_fileSystemModel;
     CustomSortProxyModel *m_proxyModel;
 
+    QString m_currentUser;           // имя пользователя
+    int m_currentUserId = -1;        // ID в таблице users
+
     QString m_toFolder;
     QString m_drawingsFolder;
     QString m_advertisingFolder;
     QString m_glassFolder;
-    QString m_databasePath;
+    QString m_databasePath;          // было m_databaseFolder
 
     QComboBox *m_orderCombo;
     QLineEdit *m_productLineEdit;
@@ -98,11 +104,8 @@ private:
     bool m_showStats    = true;
     bool m_showToolbar1 = true;
     bool m_showToolbar2 = true;
-
-    QToolBar *m_historyToolBar = nullptr;
     bool m_showHistoryButtons = true;
 
-    // Статистика и таймер
     StatsDatabase *m_statsDb;
     QTimer *m_displayTimer;
     QElapsedTimer m_elapsed;
@@ -112,30 +115,14 @@ private:
     FlipButton *m_playStopBtn = nullptr;
     ModeButton *m_modeBtn = nullptr;
     QString m_currentItem;
-    int m_sketchAccumulatedSec = 0;   // накопленное время эскиза (сек)
-    int m_drawingAccumulatedSec = 0;  // накопленное время чертежей (сек)
-    // Указатели на кнопки первого тулбара
-    QAction *m_actionOrder = nullptr;
-    QAction *m_actionSketch = nullptr;
-    QAction *m_actionDrawTO = nullptr;
-    QAction *m_actionDraw = nullptr;
-    QAction *m_actionPZ = nullptr;
-
-    // Указатели на кнопки второго тулбара
-    QAction *m_actionTOMove = nullptr;
-    QAction *m_actionCopyName = nullptr;
-    QAction *m_actionCopyArticul = nullptr;
-
+    int m_sketchAccumulatedSec = 0;
+    int m_drawingAccumulatedSec = 0;
 
     QToolBar *m_toolbar1 = nullptr;
     QToolBar *m_toolbar2 = nullptr;
     QToolBar *m_toolbar3 = nullptr;
+    QToolBar *m_historyToolBar = nullptr;
     QWidget *m_statsContainer = nullptr;
-
-    void updateHighlightMode(const QString &currentPath);
-    StatisticsDialog *m_statsDialog = nullptr;
-
-
 };
 
 #endif // CONSTRUCTOR_H

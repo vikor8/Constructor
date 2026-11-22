@@ -14,7 +14,8 @@ StatsDatabase::~StatsDatabase() {
 
 bool StatsDatabase::init(const QString &dbPath)
 {
-    // Если соединение с таким именем уже есть — закрываем и переиспользуем его
+    // 1. Проверяем, существует ли уже соединение с таким именем.
+    // Это нужно, чтобы при смене базы (через настройки) не создавать дубликаты.
     if (QSqlDatabase::contains("stats_connection")) {
         m_db = QSqlDatabase::database("stats_connection");
         if (m_db.isOpen()) {
@@ -24,12 +25,31 @@ bool StatsDatabase::init(const QString &dbPath)
         m_db = QSqlDatabase::addDatabase("QSQLITE", "stats_connection");
     }
 
+    // 2. Устанавливаем путь к базе данных (локальный или сетевой)
     m_db.setDatabaseName(dbPath);
+
+    // 3. Пытаемся открыть
     if (!m_db.open()) {
-        qWarning() << "Cannot open stats database:" << m_db.lastError().text()
-        << "path:" << dbPath;
+        qWarning() << "Не удалось открыть базу данных:" << m_db.lastError().text()
+        << "Путь:" << dbPath;
         return false;
     }
+
+    // 4. Настройка PRAGMA для работы в сети и целостности данных
+    QSqlQuery q(m_db);
+
+    // Включаем режим WAL для поддержки одновременного чтения и записи
+    if (!q.exec("PRAGMA journal_mode=WAL;")) {
+        qWarning() << "Не удалось включить WAL режим:" << q.lastError().text();
+    }
+
+    // Включаем проверку внешних ключей (нужно для связи user_id -> users.id)
+    q.exec("PRAGMA foreign_keys = ON;");
+
+    // Если база заблокирована другим пользователем, ждем до 5 секунд, прежде чем выдать ошибку
+    q.exec("PRAGMA busy_timeout = 5000;");
+
+    // 5. Создаем таблицы, если база пустая (например, новый пользователь)
     return createTables();
 }
 
@@ -165,57 +185,74 @@ int StatsDatabase::getTotalTime(const QString &itemNumber, bool isSketch)
     return 0;
 }
 
-bool StatsDatabase::recordSentToTO(const QString &article,
-                                   const QString &name,
-                                   const QString &orderNumber,
-                                   double points)
+bool StatsDatabase::recordSentToTO(int userId, const QString &article, const QString &name,
+                                   const QString &orderNumber, double points)
 {
     QSqlQuery q(m_db);
-    q.prepare("INSERT INTO sent_to_to "
-              "(article, name, order_number, points, sent_at) "
-              "VALUES (?, ?, ?, ?, datetime('now','localtime'))");
+    q.prepare("INSERT INTO sent_to_to (user_id, article, name, order_number, points, sent_at) "
+              "VALUES (?, ?, ?, ?, ?, datetime('now','localtime'))");
+    q.addBindValue(userId);
     q.addBindValue(article);
     q.addBindValue(name);
     q.addBindValue(orderNumber);
-    q.addBindValue(points);        // QVariant сам подберёт тип (double)
+    q.addBindValue(points);
     return q.exec();
 }
 
-QList<SentRecord> StatsDatabase::findSentRecords(const QDate &from,
+QList<SentRecord> StatsDatabase::findSentRecords(int userId,
+                                                 const QDate &from,
                                                  const QDate &to,
                                                  const QString &articleLike)
 {
     QList<SentRecord> list;
 
-    // Берём только последнюю отправку по каждому артикулу (MAX(id)).
-    // Если артикул отправлялся несколько раз — попадёт только свежая запись.
+    if (userId <= 0) {
+        qWarning() << "findSentRecords: некорректный userId" << userId;
+        return list;
+    }
+
+    // 1. Базовый запрос.
+    // Обязательно фильтруем по user_id.
+    // Подзапрос (SELECT MAX(id) ... GROUP BY article) берет только последнюю отправку для каждого артикула
+    // (чтобы не было дублей, если изделие отправляли несколько раз).
     QString sql =
         "SELECT s.id, s.article, s.name, s.order_number, s.points, s.sent_at "
         "FROM sent_to_to s "
-        "WHERE s.id IN (SELECT MAX(id) FROM sent_to_to GROUP BY article)";
+        "WHERE s.user_id = ? "
+        "AND s.id IN (SELECT MAX(id) FROM sent_to_to WHERE user_id = ? GROUP BY article)";
 
+    // 2. Добавляем фильтры по дате, если они заданы
     if (from.isValid())
         sql += " AND date(s.sent_at) >= date(?)";
     if (to.isValid())
         sql += " AND date(s.sent_at) <= date(?)";
+
+    // 3. Добавляем фильтр по поиску (артикул или наименование)
     if (!articleLike.isEmpty())
         sql += " AND (s.article LIKE ? OR s.name LIKE ?)";
 
+    // 4. Сортировка: сначала новые, потом по заказу, потом по артикулу
     sql += " ORDER BY s.sent_at DESC, s.order_number ASC, s.article ASC";
 
     QSqlQuery q(m_db);
     q.prepare(sql);
 
+    // 5. Привязываем параметры в том же порядке, в котором они идут в SQL-запросе
+    q.addBindValue(userId); // для s.user_id = ?
+    q.addBindValue(userId); // для подзапроса WHERE user_id = ?
+
     if (from.isValid())
         q.addBindValue(from.toString("yyyy-MM-dd"));
     if (to.isValid())
         q.addBindValue(to.toString("yyyy-MM-dd"));
+
     if (!articleLike.isEmpty()) {
         const QString like = "%" + articleLike + "%";
         q.addBindValue(like);
         q.addBindValue(like);
     }
 
+    // 6. Выполняем и заполняем список
     if (q.exec()) {
         while (q.next()) {
             SentRecord r;
@@ -223,7 +260,7 @@ QList<SentRecord> StatsDatabase::findSentRecords(const QDate &from,
             r.article     = q.value(1).toString();
             r.name        = q.value(2).toString();
             r.orderNumber = q.value(3).toString();
-            r.points = q.value(4).toDouble();
+            r.points      = q.value(4).toDouble(); // toDouble для поддержки 3.5
             r.sentAt      = q.value(5).toDateTime();
             list.append(r);
         }
@@ -233,7 +270,6 @@ QList<SentRecord> StatsDatabase::findSentRecords(const QDate &from,
 
     return list;
 }
-
 bool StatsDatabase::updateSentPoints(int id, double newPoints)
 {
     if (id <= 0) return false;
@@ -247,4 +283,36 @@ bool StatsDatabase::updateSentPoints(int id, double newPoints)
         return false;
     }
     return true;
+}
+int StatsDatabase::getUserId(const QString &username) {
+    QSqlQuery q(m_db);
+    q.prepare("SELECT id FROM users WHERE username = ?");
+    q.addBindValue(username);
+    if (q.exec() && q.next()) {
+        return q.value(0).toInt();
+    }
+    return -1; // Не найден
+}
+
+int StatsDatabase::getOrCreateUserId(const QString &username)
+{
+    if (username.isEmpty()) return -1;
+
+    QSqlQuery q(m_db);
+
+    // 1. Пытаемся найти пользователя
+    q.prepare("SELECT id FROM users WHERE username = ?");
+    q.addBindValue(username);
+    if (q.exec() && q.next()) {
+        return q.value(0).toInt();
+    }
+
+    // 2. Если не нашли — создаем нового
+    q.prepare("INSERT INTO users (username) VALUES (?)");
+    q.addBindValue(username);
+    if (q.exec()) {
+        return q.lastInsertId().toInt();
+    }
+
+    return -1;
 }

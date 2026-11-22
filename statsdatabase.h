@@ -5,14 +5,15 @@
 #include <QSqlDatabase>
 #include <QDateTime>
 #include <QList>
+#include <QDate>
 
 struct WorkSession {
     int id = -1;
     QString itemNumber;
-    int sketchTimeSec = 0;      // общее время эскиза
+    int sketchTimeSec = 0;
     QDateTime sketchStart;
     QDateTime sketchEnd;
-    int drawingTimeSec = 0;     // общее время чертежей
+    int drawingTimeSec = 0;
     QDateTime drawingStart;
     QDateTime drawingEnd;
     int totalTimeSec = 0;
@@ -20,11 +21,11 @@ struct WorkSession {
 
 struct SentRecord {
     int id = -1;
-    QString article;       // "220.04(1-5B)"
-    QString name;          // "M-2.11 Хранение в нише"
-    QString orderNumber;   // "220"
-    double points = 0.0;         // 5
-    QDateTime sentAt;      // дата и время отправки
+    QString article;
+    QString name;
+    QString orderNumber;
+    double points = 0.0;
+    QDateTime sentAt;
 };
 
 class StatsDatabase : public QObject
@@ -35,31 +36,46 @@ public:
     ~StatsDatabase();
 
     bool init(const QString &dbPath);
-    bool startSession(const QString &itemNumber, bool isSketch); // isSketch = true (эскиз), false (чертежи)
+
+    // Возвращает указатель на текущую БД (для прямых запросов)
+    QSqlDatabase database() const { return m_db; }
+
+    // --- Отправки в ТО ---
+    // Добавили userId первым параметром
+    bool recordSentToTO(int userId,
+                        const QString &article,
+                        const QString &name,
+                        const QString &orderNumber,
+                        double points);
+
+    bool updateSentPoints(int id, double newPoints);
+
+    bool updateSentRecord(int id,
+                          const QString &article,
+                          const QString &name,
+                          const QString &orderNumber);
+
+    // Добавили userId первым параметром
+    QList<SentRecord> findSentRecords(int userId,
+                                      const QDate &from,
+                                      const QDate &to,
+                                      const QString &articleLike);
+
+    // --- Рабочие сессии (таймер) ---
+    bool startSession(const QString &itemNumber, bool isSketch);
     bool stopSession(const QString &itemNumber, bool isSketch, int elapsedSec);
     WorkSession getSession(const QString &itemNumber);
     QList<WorkSession> getAllSessions();
-     int getTotalTime(const QString &itemNumber, bool isSketch);
+    int getTotalTime(const QString &itemNumber, bool isSketch);
 
-    // Запись факта отправки изделия в ТО
-    bool recordSentToTO(const QString &article,
-                        const QString &name,
-                        const QString &orderNumber,
-                         double points);
-
-    // Получение отправок за период (from — включительно, to — включительно)
-    QList<SentRecord> findSentRecords(const QDate &from,
-                                      const QDate &to,
-                                      const QString &articleLike = QString());
-
-    // Обновить количество баллов у записи
-    bool updateSentPoints(int id, double newPoints);
+    // --- Пользователи ---
+    int getUserId(const QString &username);
+    int getOrCreateUserId(const QString &username);
 
 private:
     QSqlDatabase m_db;
     bool createTables();
     int getActiveSessionId(const QString &itemNumber, bool isSketch);
-
 };
 
 #endif // STATSDATABASE_H

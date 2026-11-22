@@ -2,23 +2,24 @@
 #define STATISTICSDIALOG_H
 
 #include <QDialog>
-#include <QStandardItemModel>
+#include <QDate>
 
+class QLabel;
+class QTimer;
+class QStandardItemModel;
 class StatsDatabase;
 
 namespace Ui {
 class StatisticsDialog;
 }
-class QLabel;   // forward declaration
-class QStandardItemModel;
-class QTimer;
-class StatsDatabase;
+
 class StatisticsDialog : public QDialog
 {
     Q_OBJECT
 
 public:
-    explicit StatisticsDialog(StatsDatabase *db, QWidget *parent = nullptr);
+    // <-- Добавили int userId
+    explicit StatisticsDialog(StatsDatabase *db, int userId, QWidget *parent = nullptr);
     ~StatisticsDialog();
 
 private slots:
@@ -26,28 +27,28 @@ private slots:
     void onPeriodChanged(int index);
     void onExportCsvClicked();
     void onCopyClicked();
-    void onTreeDoubleClicked(const QModelIndex &index);
     void onAddItemClicked();
+    void onTreeDoubleClicked(const QModelIndex &index);
 
 private:
-    void reloadData();
-    QDate resolveFromDate() const;   // вычисляет дату начала по выбранному пресету
-    QDate resolveToDate() const;
-
-    Ui::StatisticsDialog *ui;
-    StatsDatabase        *m_db = nullptr;
-    QStandardItemModel   *m_model = nullptr;
+    static QString formatPoints(double v);
     static QString pluralizeItems(int n);
     static QString pluralizeOrders(int n);
     static QString pluralizeDays(int n);
     static QString pluralizePoints(int n);
-    QTimer *m_searchTimer = nullptr;
-    QLabel *m_totalLabel = nullptr;
-    void onItemChanged(QStandardItem *item);
-    void recalcTotals();
-    bool m_updating = false;
-    static QString formatPoints(double v);
 
+    void reloadData();
+    void recalcTotals();
+    QDate resolveFromDate() const;
+    QDate resolveToDate() const;
+
+    Ui::StatisticsDialog *ui;
+    StatsDatabase        *m_db = nullptr;
+    int                   m_userId = -1;   // <-- Храним ID пользователя
+    QStandardItemModel   *m_model = nullptr;
+    QTimer               *m_searchTimer = nullptr;
+    QLabel               *m_totalLabel = nullptr;
+    bool                  m_updating = false;
 };
 
-#endif
+#endif // STATISTICSDIALOG_H
